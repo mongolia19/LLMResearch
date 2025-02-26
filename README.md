@@ -95,6 +95,7 @@ The `--steps` parameter in the reasoning command sets the maximum number of reas
 
 - If the model naturally completes the task in fewer steps than specified, it will stop when the task is complete.
 - If the model would need more steps than specified, it will be limited to the maximum number of steps.
+- If the model generates significantly more subtasks than the maximum steps (over 1.5x the limit), it will automatically retry the task decomposition up to 2 times, asking the model to provide fewer subtasks.
 
 For example, if you set `--steps 5` but the model only needs 3 steps to reach a conclusion, it will use just 3 steps. This is efficient and doesn't force unnecessary computation.
 

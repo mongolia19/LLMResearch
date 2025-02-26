@@ -200,32 +200,51 @@ class Reasoning:
         print(f"\n🔍 分析任务: \"{task}\"")
         print("正在将任务分解为子任务...\n")
         
-        # Construct the prompt
-        prompt = "Break down the following task into smaller, manageable subtasks:\n\n"
+        max_retries = 2
+        retry_count = 0
         
-        if context:
-            prompt += f"Context:\n{context}\n\n"
-        
-        prompt += f"Task: {task}\n\n"
-        prompt += "Subtasks (numbered list):"
-        
-        # Execute the decomposition step
-        decomposition = self.execute_step(
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            **kwargs
-        )
-        
-        # Parse the subtasks
-        subtasks = []
-        for line in decomposition.split("\n"):
-            line = line.strip()
-            if line and (line[0].isdigit() or line[0] == "-"):
-                # Remove the number/bullet and any following punctuation
-                subtask = line.lstrip("0123456789.-) \t")
-                if subtask:
-                    subtasks.append(subtask)
+        while True:
+            # Construct the prompt
+            prompt = "Break down the following task into smaller, manageable subtasks:\n\n"
+            
+            if context:
+                prompt += f"Context:\n{context}\n\n"
+            
+            prompt += f"Task: {task}\n\n"
+            
+            # If this is a retry, add instructions to limit the number of subtasks
+            if retry_count > 0:
+                prompt += f"Important: Please limit your response to at most {self.max_steps} subtasks. "
+                prompt += f"The previous breakdown had too many subtasks ({len(subtasks)}).\n\n"
+            
+            prompt += "Subtasks (numbered list):"
+            
+            # Execute the decomposition step
+            decomposition = self.execute_step(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs
+            )
+            
+            # Parse the subtasks
+            subtasks = []
+            for line in decomposition.split("\n"):
+                line = line.strip()
+                if line and (line[0].isdigit() or line[0] == "-"):
+                    # Remove the number/bullet and any following punctuation
+                    subtask = line.lstrip("0123456789.-) \t")
+                    if subtask:
+                        subtasks.append(subtask)
+            
+            # Check if we have too many subtasks
+            if len(subtasks) <= self.max_steps * 1.5 or retry_count >= max_retries:
+                break
+            
+            # If we have too many subtasks, retry
+            retry_count += 1
+            print(f"\n⚠️ 生成的子任务数量 ({len(subtasks)}) 远超最大步骤数 ({self.max_steps})")
+            print(f"正在重新分解任务 (尝试 {retry_count}/{max_retries})...\n")
         
         # Display the subtasks
         print("\n📋 已将任务分解为以下子任务:")
@@ -382,7 +401,7 @@ class Reasoning:
         # Note: If the model generates fewer subtasks than max_steps,
         # we'll just use those without requiring exactly max_steps
         if len(subtasks) > self.max_steps:
-            print(f"\n⚠️ 生成的子任务数量 ({len(subtasks)}) 超过了最大步骤数 ({self.max_steps})")
+            print(f"\n⚠️ 执行的子任务数量将限制为最大步骤数 ({self.max_steps})")
             print(f"只执行前 {self.max_steps} 个子任务\n")
             subtasks = subtasks[:self.max_steps]
         
