@@ -1,0 +1,2 @@
+[console_scripts]
+llm-research = llm_research.main:main
