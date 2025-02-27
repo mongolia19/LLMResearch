@@ -8,6 +8,7 @@ A command-line tool for LLM-based research, multi-step reasoning, and content ge
 - Custom configuration for base URL, API key, and model name
 - Local file reading and processing
 - Multi-step reasoning and writing generation
+- Web search integration for retrieving real-time information
 - Interactive command-line interface with progress indicators
 - Continuous conversation with clarifying questions
 - Detailed progress feedback during multi-step reasoning
@@ -117,6 +118,35 @@ python -m llm_research reason --topic "Complex physics problem" --steps 5 --retr
 
 # Use the example script
 python examples/retry_reasoning.py --task "Analyze the impact of quantum computing on cryptography" --retries 4
+```
+
+#### Web Search Integration
+
+The system now includes web search capabilities that allow the LLM to retrieve real-time information from the internet during the reasoning process:
+
+- The LLM can search the web for information when solving subtasks
+- Web search is powered by the Bocha API, which provides comprehensive search results
+- The `--web-search/--no-web-search` flag enables or disables web search (default: enabled)
+- The `--bocha-api-key` parameter allows you to provide your Bocha API key directly
+
+This feature is particularly useful for tasks that require up-to-date information or facts that the LLM might not have in its training data. The LLM can autonomously decide when to search for information and incorporate the search results into its reasoning process.
+
+Example usage:
+```bash
+# Run reasoning with web search
+python -m llm_research reason --topic "Latest developments in AI" --web-search --bocha-api-key YOUR_API_KEY
+
+# Run reasoning without web search
+python -m llm_research reason --topic "Philosophical concepts" --no-web-search
+
+# Use the example script
+python examples/web_search_reasoning.py --task "Current global economic trends" --bocha-api-key YOUR_API_KEY
+```
+
+You can also set the Bocha API key in your `.env` file:
+```
+# Bocha API Configuration
+BOCHA_API_KEY=your_bocha_api_key_here
 ```
 
 #### Progress Indicators

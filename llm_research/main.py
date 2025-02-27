@@ -15,6 +15,7 @@ from llm_research.llm.custom import CustomLLM
 from llm_research.file_handler import FileHandler
 from llm_research.conversation import Conversation
 from llm_research.reasoning import Reasoning
+from llm_research.web_search import get_web_search_tool
 
 
 def get_llm_provider(config: Config, provider_name: Optional[str] = None) -> BaseLLM:
@@ -75,6 +76,8 @@ def cli():
 @click.option("--retries", "-r", type=int, default=3, help="Maximum number of retry attempts per subtask")
 @click.option("--temperature", type=float, default=0.7, help="Sampling temperature")
 @click.option("--max-tokens", type=int, help="Maximum number of tokens to generate")
+@click.option("--web-search/--no-web-search", default=True, help="Enable/disable web search")
+@click.option("--bocha-api-key", help="Bocha API key for web search")
 def reason(
     provider: Optional[str],
     file: List[str],
@@ -82,7 +85,9 @@ def reason(
     steps: int,
     retries: int,
     temperature: float,
-    max_tokens: Optional[int]
+    max_tokens: Optional[int],
+    web_search: bool,
+    bocha_api_key: Optional[str]
 ):
     """
     Perform multi-step reasoning on a topic or file.
@@ -93,8 +98,40 @@ def reason(
     # Get the LLM provider
     llm = get_llm_provider(config, provider)
     
+    # Initialize web search tool if enabled
+    web_search_tool = None
+    if web_search:
+        try:
+            # Get the API key from the parameter, environment variable, or config
+            api_key = bocha_api_key or os.environ.get("BOCHA_API_KEY")
+            
+            # If no API key is provided, check the config
+            if not api_key:
+                provider_config = config.get_provider_config("bocha")
+                api_key = provider_config.get("api_key") if provider_config else None
+            
+            # If still no API key, prompt the user
+            if not api_key:
+                api_key = getpass.getpass("Enter Bocha API key: ")
+                
+                # Save the API key in the config
+                if api_key:
+                    bocha_config = {
+                        "api_key": api_key,
+                        "type": "web_search"
+                    }
+                    config.set_provider_config("bocha", bocha_config)
+            
+            if api_key:
+                web_search_tool = get_web_search_tool(api_key=api_key)
+                click.echo("Web search enabled using Bocha API")
+            else:
+                click.echo("Web search disabled: No API key provided", err=True)
+        except Exception as e:
+            click.echo(f"Error initializing web search: {e}", err=True)
+    
     # Create the reasoning manager
-    reasoning = Reasoning(llm, max_steps=steps, temperature=temperature)
+    reasoning = Reasoning(llm, max_steps=steps, temperature=temperature, web_search=web_search_tool)
     
     # Read files if provided
     context = ""
@@ -118,7 +155,8 @@ def reason(
             task=topic,
             context=context if context else None,
             max_tokens=max_tokens,
-            max_retries=retries
+            max_retries=retries,
+            web_search_enabled=web_search
         )
     else:
         click.echo("Analyzing files...")

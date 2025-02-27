@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from llm_research.llm.base import BaseLLM
 from llm_research.conversation import Conversation
+from llm_research.web_search import BochaWebSearch
 
 
 @dataclass
@@ -33,7 +34,8 @@ class Reasoning:
         self,
         llm: BaseLLM,
         max_steps: int = 5,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        web_search: Optional[BochaWebSearch] = None
     ):
         """
         Initialize the reasoning manager.
@@ -42,10 +44,12 @@ class Reasoning:
             llm: The LLM provider to use
             max_steps: Maximum number of reasoning steps
             temperature: Sampling temperature for LLM calls
+            web_search: Web search tool for retrieving information (optional)
         """
         self.llm = llm
         self.max_steps = max_steps
         self.temperature = temperature
+        self.web_search = web_search
         self.steps: List[ReasoningStep] = []
     
     def add_step(self, prompt: str, response: str = "", metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -118,10 +122,49 @@ class Reasoning:
             **kwargs
         )
         
-        # Add the step
-        self.add_step(prompt, response["text"])
+        response_text = response["text"]
         
-        return response["text"]
+        # Check if the response contains a search request
+        if self.web_search and "SEARCH:" in response_text:
+            # Extract the search query
+            lines = response_text.split("\n")
+            search_queries = []
+            
+            for i, line in enumerate(lines):
+                if line.strip().startswith("SEARCH:"):
+                    query = line.strip()[len("SEARCH:"):].strip()
+                    search_queries.append((i, query))
+            
+            # If we found search queries, perform the searches and update the response
+            if search_queries:
+                print(f"🔍 检测到搜索请求，执行网络搜索...")
+                
+                for idx, query in search_queries:
+                    print(f"🌐 搜索查询: \"{query}\"")
+                    search_results = self.web_search.search(query=query)
+                    
+                    # Replace the search line with the query and results
+                    lines[idx] = f"SEARCH: {query}\n\nSearch Results:\n{search_results}\n"
+                
+                # Reconstruct the response with search results
+                updated_prompt = prompt + "\n\n" + "\n".join(lines)
+                
+                # Generate a new response with the search results
+                print(f"💭 使用搜索结果重新生成回答...")
+                new_response = self.llm.generate(
+                    prompt=updated_prompt,
+                    max_tokens=max_tokens,
+                    temperature=temp,
+                    **kwargs
+                )
+                
+                # Update the response text
+                response_text = new_response["text"]
+        
+        # Add the step
+        self.add_step(prompt, response_text)
+        
+        return response_text
     
     def chain_of_thought(
         self,
@@ -305,6 +348,13 @@ class Reasoning:
                     for j, (prev_task, prev_response) in enumerate(zip(subtasks[:i], responses)):
                         prompt += f"Subtask {j+1}: {prev_task}\nResult: {prev_response}\n\n"
                 
+                # Add web search tool instructions if available
+                if self.web_search:
+                    prompt += "Tools available:\n"
+                    prompt += "1. Web Search Tool - You can search the internet for information by using the following format:\n"
+                    prompt += "   SEARCH: your search query\n"
+                    prompt += "   This will return search results from the web that you can use to answer the question.\n\n"
+                
                 prompt += f"Execute subtask: {subtask}\n\n"
                 prompt += "Result:"
                 
@@ -447,7 +497,8 @@ class Reasoning:
         context: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        max_retries: int = 3,  # New parameter for maximum retries
+        max_retries: int = 3,  # Parameter for maximum retries
+        web_search_enabled: bool = True,  # Enable/disable web search for this task
         **kwargs
     ) -> str:
         """
@@ -459,6 +510,7 @@ class Reasoning:
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature
             max_retries: Maximum number of retry attempts for each subtask (default: 3)
+            web_search_enabled: Whether to enable web search for this task (default: True)
             **kwargs: Additional parameters for the LLM
             
         Returns:
@@ -486,15 +538,29 @@ class Reasoning:
             print(f"只执行前 {self.max_steps} 个子任务\n")
             subtasks = subtasks[:self.max_steps]
         
-        # Execute the subtasks
-        results = self.execute_subtasks(
-            subtasks=subtasks,
-            context=context,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            max_retries=max_retries,  # Pass the max_retries parameter
-            **kwargs
-        )
+        # Store the original web search setting
+        original_web_search = self.web_search
+        
+        # Temporarily disable web search if requested
+        if not web_search_enabled:
+            self.web_search = None
+            print("🔍 网络搜索功能已禁用")
+        elif self.web_search:
+            print("🔍 网络搜索功能已启用")
+        
+        try:
+            # Execute the subtasks
+            results = self.execute_subtasks(
+                subtasks=subtasks,
+                context=context,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                max_retries=max_retries,  # Pass the max_retries parameter
+                **kwargs
+            )
+        finally:
+            # Restore the original web search setting
+            self.web_search = original_web_search
         
         # Aggregate the results
         final_result = self.aggregate_results(
