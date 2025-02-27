@@ -99,6 +99,26 @@ The `--steps` parameter in the reasoning command sets the maximum number of reas
 
 For example, if you set `--steps 5` but the model only needs 3 steps to reach a conclusion, it will use just 3 steps. This is efficient and doesn't force unnecessary computation.
 
+#### Subtask Retry Mechanism
+
+The system now includes a subtask retry mechanism that validates the completion of each subtask:
+
+- After executing a subtask, the system calls the LLM to evaluate if the subtask was completed successfully
+- If the subtask is determined to be incomplete, the system will retry it up to a configurable number of times
+- The `--retries` parameter (or `max_retries` in the API) controls the maximum number of retry attempts per subtask (default: 3)
+- If a subtask still fails after the maximum number of retries, the system will use the last response and continue with the next subtask
+
+This mechanism improves the reliability of multi-step reasoning by ensuring each step is properly completed before moving on to the next one. It's particularly useful for complex tasks where the model might initially provide incomplete or incorrect responses.
+
+Example usage:
+```bash
+# Run reasoning with custom retry settings
+python -m llm_research reason --topic "Complex physics problem" --steps 5 --retries 5
+
+# Use the example script
+python examples/retry_reasoning.py --task "Analyze the impact of quantum computing on cryptography" --retries 4
+```
+
 #### Progress Indicators
 
 When running multi-step reasoning, the system now provides detailed progress indicators:

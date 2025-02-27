@@ -72,6 +72,7 @@ def cli():
 @click.option("--file", "-f", multiple=True, help="Path to a file to read")
 @click.option("--topic", "-t", help="The topic to research")
 @click.option("--steps", "-s", type=int, default=3, help="Number of reasoning steps")
+@click.option("--retries", "-r", type=int, default=3, help="Maximum number of retry attempts per subtask")
 @click.option("--temperature", type=float, default=0.7, help="Sampling temperature")
 @click.option("--max-tokens", type=int, help="Maximum number of tokens to generate")
 def reason(
@@ -79,6 +80,7 @@ def reason(
     file: List[str],
     topic: Optional[str],
     steps: int,
+    retries: int,
     temperature: float,
     max_tokens: Optional[int]
 ):
@@ -115,7 +117,8 @@ def reason(
         result = reasoning.solve_task(
             task=topic,
             context=context if context else None,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            max_retries=retries
         )
     else:
         click.echo("Analyzing files...")

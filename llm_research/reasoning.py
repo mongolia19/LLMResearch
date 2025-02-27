@@ -260,6 +260,7 @@ class Reasoning:
         context: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        max_retries: int = 3,  # New parameter for maximum retries
         **kwargs
     ) -> List[str]:
         """
@@ -270,6 +271,7 @@ class Reasoning:
             context: Additional context (optional)
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature
+            max_retries: Maximum number of retry attempts for each subtask (default: 3)
             **kwargs: Additional parameters for the LLM
             
         Returns:
@@ -282,37 +284,114 @@ class Reasoning:
             print(f"\n🔄 执行子任务 {i+1}/{total_subtasks}: \"{subtask}\"")
             print("思考中...\n")
             
-            # Construct the prompt
-            prompt = f"Subtask {i+1}/{len(subtasks)}: {subtask}\n\n"
+            # Track retry attempts
+            retry_count = 0
+            subtask_completed = False
             
-            if context:
-                prompt += f"Context:\n{context}\n\n"
-            
-            # Add previous subtask results as context
-            if responses:
-                prompt += "Previous results:\n"
-                for j, (prev_task, prev_response) in enumerate(zip(subtasks[:i], responses)):
-                    prompt += f"Subtask {j+1}: {prev_task}\nResult: {prev_response}\n\n"
-            
-            prompt += f"Execute subtask: {subtask}\n\n"
-            prompt += "Result:"
-            
-            # Execute the subtask
-            response = self.execute_step(
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                **kwargs
-            )
-            
-            # Display the result summary
-            print(f"✅ 子任务 {i+1} 完成")
-            result_summary = response[:100] + "..." if len(response) > 100 else response
-            print(f"结果摘要: {result_summary}\n")
-            
-            responses.append(response)
+            # Keep trying until the subtask is completed or max retries is reached
+            while not subtask_completed and retry_count <= max_retries:
+                if retry_count > 0:
+                    print(f"🔁 重试子任务 {i+1} (尝试 {retry_count}/{max_retries})...")
+                
+                # Construct the prompt
+                prompt = f"Subtask {i+1}/{len(subtasks)}: {subtask}\n\n"
+                
+                if context:
+                    prompt += f"Context:\n{context}\n\n"
+                
+                # Add previous subtask results as context
+                if responses:
+                    prompt += "Previous results:\n"
+                    for j, (prev_task, prev_response) in enumerate(zip(subtasks[:i], responses)):
+                        prompt += f"Subtask {j+1}: {prev_task}\nResult: {prev_response}\n\n"
+                
+                prompt += f"Execute subtask: {subtask}\n\n"
+                prompt += "Result:"
+                
+                # Execute the subtask
+                response = self.execute_step(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    **kwargs
+                )
+                
+                # Log the response for debugging
+                result_summary = response[:100] + "..." if len(response) > 100 else response
+                print(f"📝 子任务 {i+1} 结果: {result_summary}")
+                
+                # Validate if the subtask is completed
+                print("🔍 验证子任务是否完成...")
+                subtask_completed = self._validate_subtask_completion(
+                    subtask=subtask,
+                    response=response,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    **kwargs
+                )
+                
+                if subtask_completed:
+                    print(f"✅ 子任务 {i+1} 完成")
+                    responses.append(response)
+                else:
+                    print(f"❌ 子任务 {i+1} 未完成")
+                    retry_count += 1
+                    
+                    if retry_count > max_retries:
+                        print(f"⚠️ 达到最大重试次数 ({max_retries})，使用最后一次结果")
+                        responses.append(response)
+                    else:
+                        print(f"准备重试子任务 {i+1}...")
         
         return responses
+    
+    def _validate_subtask_completion(
+        self,
+        subtask: str,
+        response: str,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> bool:
+        """
+        Validate if a subtask is completed successfully.
+        
+        Args:
+            subtask: The subtask to validate
+            response: The response to validate
+            max_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Additional parameters for the LLM
+            
+        Returns:
+            True if the subtask is completed, False otherwise
+        """
+        # Construct the validation prompt
+        validation_prompt = "Evaluate if the following subtask has been completed successfully based on the response.\n\n"
+        validation_prompt += f"Subtask: {subtask}\n\n"
+        validation_prompt += f"Response: {response}\n\n"
+        validation_prompt += "Is the subtask completed successfully? Answer with 'Yes' or 'No' and provide a brief explanation.\n"
+        validation_prompt += "Answer:"
+        
+        # Execute the validation step
+        print("💭 验证中...")
+        validation_response = self.llm.generate(
+            prompt=validation_prompt,
+            max_tokens=max_tokens or 100,  # Use a smaller token limit for validation
+            temperature=temperature or 0.3,  # Use a lower temperature for more deterministic results
+            **kwargs
+        )
+        
+        # Extract the validation result
+        validation_text = validation_response["text"].strip().lower()
+        
+        # Log the validation response for debugging
+        print(f"🔍 验证结果: {validation_text[:100]}...")
+        
+        # Check if the validation response indicates completion
+        is_completed = validation_text.startswith("yes")
+        
+        return is_completed
     
     def aggregate_results(
         self,
@@ -368,6 +447,7 @@ class Reasoning:
         context: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        max_retries: int = 3,  # New parameter for maximum retries
         **kwargs
     ) -> str:
         """
@@ -378,6 +458,7 @@ class Reasoning:
             context: Additional context (optional)
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature
+            max_retries: Maximum number of retry attempts for each subtask (default: 3)
             **kwargs: Additional parameters for the LLM
             
         Returns:
@@ -411,6 +492,7 @@ class Reasoning:
             context=context,
             max_tokens=max_tokens,
             temperature=temperature,
+            max_retries=max_retries,  # Pass the max_retries parameter
             **kwargs
         )
         
