@@ -33,7 +33,7 @@ class BochaWebSearch:
         freshness: str = "noLimit",
         summary: bool = True,
         count: int = 10
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Search the web using the Bocha Web Search API.
         
@@ -44,7 +44,7 @@ class BochaWebSearch:
             count: Number of search results to return
             
         Returns:
-            Formatted search results with titles, URLs, summaries, etc.
+            Dictionary containing search results with structured data
         """
         headers = {
             'Authorization': f'Bearer {self.api_key}',
@@ -65,30 +65,67 @@ class BochaWebSearch:
                 json_response = response.json()
                 
                 if json_response["code"] != 200 or not json_response["data"]:
-                    return f"搜索API请求失败，原因是: {json_response.get('msg', '未知错误')}"
+                    return {
+                        "success": False,
+                        "error": f"搜索API请求失败，原因是: {json_response.get('msg', '未知错误')}"
+                    }
                 
                 webpages = json_response["data"]["webPages"]["value"]
                 if not webpages:
-                    return "未找到相关结果。"
+                    return {
+                        "success": True,
+                        "results": [],
+                        "message": "未找到相关结果。"
+                    }
                 
-                formatted_results = ""
-                for idx, page in enumerate(webpages, start=1):
-                    formatted_results += (
-                        f"引用: {idx}\n"
-                        f"标题: {page['name']}\n"
-                        f"URL: {page['url']}\n"
-                        f"摘要: {page['summary']}\n"
-                        f"网站名称: {page.get('siteName', 'N/A')}\n"
-                        f"网站图标: {page.get('siteIcon', 'N/A')}\n"
-                        f"发布时间: {page.get('dateLastCrawled', 'N/A')}\n\n"
-                    )
-                print('成功返回搜索结果：' , formatted_results)
-                return formatted_results.strip()
+                # Return structured data
+                return {
+                    "success": True,
+                    "query": query,
+                    "results": webpages
+                }
             else:
-                return f"搜索API请求失败，状态码: {response.status_code}, 错误信息: {response.text}"
+                return {
+                    "success": False,
+                    "error": f"搜索API请求失败，状态码: {response.status_code}, 错误信息: {response.text}"
+                }
         
         except Exception as e:
-            return f"搜索API请求失败，原因是: {str(e)}"
+            return {
+                "success": False,
+                "error": f"搜索API请求失败，原因是: {str(e)}"
+            }
+    
+    def format_search_results(self, search_results: Dict[str, Any]) -> str:
+        """
+        Format search results as a string.
+        
+        Args:
+            search_results: The search results dictionary
+            
+        Returns:
+            Formatted search results as a string
+        """
+        if not search_results["success"]:
+            return search_results.get("error", "搜索失败")
+        
+        if not search_results.get("results", []):
+            return "未找到相关结果。"
+        
+        formatted_results = ""
+        for idx, page in enumerate(search_results["results"], start=1):
+            formatted_results += (
+                f"引用: {idx}\n"
+                f"标题: {page['name']}\n"
+                f"URL: {page['url']}\n"
+                f"摘要: {page['summary']}\n"
+                f"网站名称: {page.get('siteName', 'N/A')}\n"
+                f"网站图标: {page.get('siteIcon', 'N/A')}\n"
+                f"发布时间: {page.get('dateLastCrawled', 'N/A')}\n\n"
+            )
+        
+        print('成功返回搜索结果：' , formatted_results)
+        return formatted_results.strip()
 
 
 def get_web_search_tool(api_key: Optional[str] = None) -> BochaWebSearch:

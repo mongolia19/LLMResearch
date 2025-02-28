@@ -139,6 +139,46 @@ The URL content extraction feature enhances web search by:
 - Incorporating the extracted content into the reasoning context
 - Providing more comprehensive information than just search result snippets
 
+##### Structured Search Results
+
+The web search functionality now returns structured data instead of a formatted string, making it easier to work with search results programmatically:
+
+- Search results are returned as a structured dictionary with metadata and a list of result objects
+- Each result object contains the URL, title, summary, and other metadata
+- The structured format makes it easier to iterate through results and selectively extract content
+- A formatting method is provided for backward compatibility
+
+This improvement enables more sophisticated URL selection for content extraction:
+- Better evaluation of URL relevance based on titles and summaries
+- More efficient processing of search results
+- Improved error handling with explicit success/failure status
+
+Example of using the structured search results:
+
+```python
+# Get structured search results
+search_results = web_search.search(query="Python programming")
+
+# Check if search was successful
+if search_results["success"]:
+    # Access the results directly
+    for result in search_results["results"]:
+        print(f"Title: {result['name']}")
+        print(f"URL: {result['url']}")
+        print(f"Summary: {result['summary']}")
+        
+    # Or format the results as a string
+    formatted_results = web_search.format_search_results(search_results)
+    print(formatted_results)
+else:
+    print(f"Search failed: {search_results.get('error')}")
+```
+
+You can try the improved URL extraction with the example script:
+```bash
+python examples/improved_url_extraction.py --query "Latest AI developments" --bocha-api-key YOUR_API_KEY
+```
+
 Example usage:
 ```bash
 # Run reasoning with web search and URL extraction

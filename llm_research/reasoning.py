@@ -149,69 +149,84 @@ class Reasoning:
                     search_results = self.web_search.search(query=query)
                     
                     # Extract content from URLs if enabled
+                    extracted_contents = []
                     if self.extract_url_content and self.url_extractor:
-                        # Parse the search results to find URLs
-                        extracted_contents = []
-                        url_pattern = r"URL: (https?://[^\s]+)"
-                        import re
-                        
-                        # Find all URLs in the search results
-                        urls = re.findall(url_pattern, search_results)
-                        
-                        if urls:
-                            print(f"📄 从搜索结果中发现 {len(urls)} 个URL，提取内容...")
+                        # Check if search was successful
+                        if search_results["success"] and search_results.get("results"):
+                            urls = []
+                            url_summaries = []
                             
-                            # Create a prompt to ask the LLM which URLs to extract content from
-                            url_selection_prompt = f"Based on the following search results for the query '{query}', which URLs would be most relevant to extract full content from? Select up to 3 URLs that seem most promising based on their summaries.\n\n"
-                            url_selection_prompt += f"Search Results:\n{search_results}\n\n"
-                            url_selection_prompt += "List the numbers of the most relevant URLs (e.g., '1, 3, 5'):"
+                            # Collect URLs and their summaries
+                            for result in search_results["results"]:
+                                urls.append(result["url"])
+                                url_summaries.append({
+                                    "url": result["url"],
+                                    "title": result["name"],
+                                    "summary": result["summary"]
+                                })
                             
-                            # Get the LLM's recommendation on which URLs to extract
-                            url_selection_response = self.llm.generate(
-                                prompt=url_selection_prompt,
-                                max_tokens=50,
-                                temperature=0.3
-                            )
-                            
-                            # Parse the response to get the selected URL indices
-                            selected_indices = []
-                            selection_text = url_selection_response["text"].strip()
-                            
-                            # Try to parse numbers from the response
-                            for num in re.findall(r'\d+', selection_text):
-                                try:
-                                    idx = int(num) - 1  # Convert to 0-based index
-                                    if 0 <= idx < len(urls):
-                                        selected_indices.append(idx)
-                                except ValueError:
-                                    continue
-                            
-                            # Limit to at most 3 URLs
-                            selected_indices = selected_indices[:3]
-                            
-                            # Extract content from the selected URLs
-                            for url_idx in selected_indices:
-                                url = urls[url_idx]
-                                try:
-                                    print(f"📥 提取URL内容: {url}")
-                                    content = self.url_extractor.extract_content(url, output_format="markdown")
-                                    
-                                    # Truncate content if it's too long (to avoid token limits)
-                                    max_content_length = 4000
-                                    if len(content) > max_content_length:
-                                        content = content[:max_content_length] + "...\n[Content truncated due to length]"
-                                    
-                                    extracted_contents.append(f"Extracted content from {url}:\n\n{content}\n\n")
-                                    print(f"✅ 成功提取内容，长度: {len(content)} 字符")
-                                except Exception as e:
-                                    print(f"❌ 提取内容失败: {str(e)}")
-                        
-                        # Add the extracted contents to the search results
-                        if extracted_contents:
-                            search_results += "\n\n" + "\n".join(extracted_contents)
+                            if urls:
+                                print(f"📄 从搜索结果中发现 {len(urls)} 个URL，提取内容...")
+                                
+                                # Create a prompt to ask the LLM which URLs to extract content from
+                                url_selection_prompt = f"Based on the following search results for the query '{query}', which URLs would be most relevant to extract full content from? Select up to 3 URLs that seem most promising based on their summaries.\n\n"
+                                
+                                # Add formatted summaries for the LLM to evaluate
+                                for i, summary in enumerate(url_summaries, start=1):
+                                    url_selection_prompt += f"{i}. {summary['title']}\n   URL: {summary['url']}\n   Summary: {summary['summary']}\n\n"
+                                
+                                url_selection_prompt += "List the numbers of the most relevant URLs (e.g., '1, 3, 5'):"
+                                
+                                # Get the LLM's recommendation on which URLs to extract
+                                url_selection_response = self.llm.generate(
+                                    prompt=url_selection_prompt,
+                                    max_tokens=50,
+                                    temperature=0.3
+                                )
+                                
+                                # Parse the response to get the selected URL indices
+                                selected_indices = []
+                                selection_text = url_selection_response["text"].strip()
+                                
+                                # Try to parse numbers from the response
+                                import re
+                                for num in re.findall(r'\d+', selection_text):
+                                    try:
+                                        idx = int(num) - 1  # Convert to 0-based index
+                                        if 0 <= idx < len(urls):
+                                            selected_indices.append(idx)
+                                    except ValueError:
+                                        continue
+                                
+                                # Limit to at most 3 URLs
+                                selected_indices = selected_indices[:3]
+                                
+                                # Extract content from the selected URLs
+                                for url_idx in selected_indices:
+                                    url = urls[url_idx]
+                                    try:
+                                        print(f"📥 提取URL内容: {url}")
+                                        content = self.url_extractor.extract_content(url, output_format="markdown")
+                                        
+                                        # Truncate content if it's too long (to avoid token limits)
+                                        max_content_length = 4000
+                                        if len(content) > max_content_length:
+                                            content = content[:max_content_length] + "...\n[Content truncated due to length]"
+                                        
+                                        extracted_contents.append(f"Extracted content from {url}:\n\n{content}\n\n")
+                                        print(f"✅ 成功提取内容，长度: {len(content)} 字符")
+                                    except Exception as e:
+                                        print(f"❌ 提取内容失败: {str(e)}")
+                    
+                    # Format the search results for inclusion in the prompt
+                    formatted_search_results = self.web_search.format_search_results(search_results)
+                    
+                    # Add the extracted contents to the formatted search results
+                    if extracted_contents:
+                        formatted_search_results += "\n\n" + "\n".join(extracted_contents)
                     
                     # Replace the search line with the query and results
-                    lines[idx] = f"SEARCH: {query}\n\nSearch Results:\n{search_results}\n"
+                    lines[idx] = f"SEARCH: {query}\n\nSearch Results:\n{formatted_search_results}\n"
                 
                 # Reconstruct the response with search results
                 updated_prompt = prompt + "\n\n" + "\n".join(lines)
