@@ -16,6 +16,7 @@ from llm_research.file_handler import FileHandler
 from llm_research.conversation import Conversation
 from llm_research.reasoning import Reasoning
 from llm_research.web_search import get_web_search_tool
+from llm_research.url_extractor import get_url_extractor
 
 
 def get_llm_provider(config: Config, provider_name: Optional[str] = None) -> BaseLLM:
@@ -77,6 +78,7 @@ def cli():
 @click.option("--temperature", type=float, default=0.7, help="Sampling temperature")
 @click.option("--max-tokens", type=int, help="Maximum number of tokens to generate")
 @click.option("--web-search/--no-web-search", default=True, help="Enable/disable web search")
+@click.option("--extract-url/--no-extract-url", default=True, help="Enable/disable URL content extraction")
 @click.option("--bocha-api-key", help="Bocha API key for web search")
 def reason(
     provider: Optional[str],
@@ -87,6 +89,7 @@ def reason(
     temperature: float,
     max_tokens: Optional[int],
     web_search: bool,
+    extract_url: bool,
     bocha_api_key: Optional[str]
 ):
     """
@@ -131,7 +134,7 @@ def reason(
             click.echo(f"Error initializing web search: {e}", err=True)
     
     # Create the reasoning manager
-    reasoning = Reasoning(llm, max_steps=steps, temperature=temperature, web_search=web_search_tool)
+    reasoning = Reasoning(llm, max_steps=steps, temperature=temperature, web_search=web_search_tool, extract_url_content=extract_url)
     
     # Read files if provided
     context = ""
@@ -156,7 +159,8 @@ def reason(
             context=context if context else None,
             max_tokens=max_tokens,
             max_retries=retries,
-            web_search_enabled=web_search
+            web_search_enabled=web_search,
+            extract_url_content=extract_url
         )
     else:
         click.echo("Analyzing files...")
@@ -481,6 +485,37 @@ def config_delete(provider: str):
         click.echo(f"Provider {provider} deleted successfully.")
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
+
+
+@cli.command()
+@click.option("--url", "-u", required=True, help="URL to extract content from")
+@click.option("--format", "-f", default="markdown", type=click.Choice(["markdown", "text", "html"]), help="Output format")
+@click.option("--output", "-o", help="Output file path (optional)")
+def extract_url(url: str, format: str, output: Optional[str]):
+    """
+    Extract content from a URL using docling.
+    
+    This command extracts the content from a URL and outputs it in the specified format.
+    The content can be saved to a file or printed to the console.
+    """
+    try:
+        # Get the URL extractor
+        url_extractor = get_url_extractor()
+        
+        # Extract the content
+        click.echo(f"Extracting content from URL: {url}")
+        content = url_extractor.extract_content(url, output_format=format)
+        
+        # Save to file or print to console
+        if output:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(content)
+            click.echo(f"Content saved to {output}")
+        else:
+            click.echo("\nExtracted content:")
+            click.echo(content)
+    except Exception as e:
+        click.echo(f"Error extracting content: {e}", err=True)
 
 
 def main():

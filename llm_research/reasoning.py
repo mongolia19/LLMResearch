@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from llm_research.llm.base import BaseLLM
 from llm_research.conversation import Conversation
 from llm_research.web_search import BochaWebSearch
+from llm_research.url_extractor import get_url_extractor
 
 
 @dataclass
@@ -35,7 +36,8 @@ class Reasoning:
         llm: BaseLLM,
         max_steps: int = 5,
         temperature: float = 0.7,
-        web_search: Optional[BochaWebSearch] = None
+        web_search: Optional[BochaWebSearch] = None,
+        extract_url_content: bool = True
     ):
         """
         Initialize the reasoning manager.
@@ -45,11 +47,14 @@ class Reasoning:
             max_steps: Maximum number of reasoning steps
             temperature: Sampling temperature for LLM calls
             web_search: Web search tool for retrieving information (optional)
+            extract_url_content: Whether to extract content from URLs found in search results (default: True)
         """
         self.llm = llm
         self.max_steps = max_steps
         self.temperature = temperature
         self.web_search = web_search
+        self.extract_url_content = extract_url_content
+        self.url_extractor = get_url_extractor() if extract_url_content else None
         self.steps: List[ReasoningStep] = []
     
     def add_step(self, prompt: str, response: str = "", metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -142,6 +147,68 @@ class Reasoning:
                 for idx, query in search_queries:
                     print(f"🌐 搜索查询: \"{query}\"")
                     search_results = self.web_search.search(query=query)
+                    
+                    # Extract content from URLs if enabled
+                    if self.extract_url_content and self.url_extractor:
+                        # Parse the search results to find URLs
+                        extracted_contents = []
+                        url_pattern = r"URL: (https?://[^\s]+)"
+                        import re
+                        
+                        # Find all URLs in the search results
+                        urls = re.findall(url_pattern, search_results)
+                        
+                        if urls:
+                            print(f"📄 从搜索结果中发现 {len(urls)} 个URL，提取内容...")
+                            
+                            # Create a prompt to ask the LLM which URLs to extract content from
+                            url_selection_prompt = f"Based on the following search results for the query '{query}', which URLs would be most relevant to extract full content from? Select up to 3 URLs that seem most promising based on their summaries.\n\n"
+                            url_selection_prompt += f"Search Results:\n{search_results}\n\n"
+                            url_selection_prompt += "List the numbers of the most relevant URLs (e.g., '1, 3, 5'):"
+                            
+                            # Get the LLM's recommendation on which URLs to extract
+                            url_selection_response = self.llm.generate(
+                                prompt=url_selection_prompt,
+                                max_tokens=50,
+                                temperature=0.3
+                            )
+                            
+                            # Parse the response to get the selected URL indices
+                            selected_indices = []
+                            selection_text = url_selection_response["text"].strip()
+                            
+                            # Try to parse numbers from the response
+                            for num in re.findall(r'\d+', selection_text):
+                                try:
+                                    idx = int(num) - 1  # Convert to 0-based index
+                                    if 0 <= idx < len(urls):
+                                        selected_indices.append(idx)
+                                except ValueError:
+                                    continue
+                            
+                            # Limit to at most 3 URLs
+                            selected_indices = selected_indices[:3]
+                            
+                            # Extract content from the selected URLs
+                            for url_idx in selected_indices:
+                                url = urls[url_idx]
+                                try:
+                                    print(f"📥 提取URL内容: {url}")
+                                    content = self.url_extractor.extract_content(url, output_format="markdown")
+                                    
+                                    # Truncate content if it's too long (to avoid token limits)
+                                    max_content_length = 4000
+                                    if len(content) > max_content_length:
+                                        content = content[:max_content_length] + "...\n[Content truncated due to length]"
+                                    
+                                    extracted_contents.append(f"Extracted content from {url}:\n\n{content}\n\n")
+                                    print(f"✅ 成功提取内容，长度: {len(content)} 字符")
+                                except Exception as e:
+                                    print(f"❌ 提取内容失败: {str(e)}")
+                        
+                        # Add the extracted contents to the search results
+                        if extracted_contents:
+                            search_results += "\n\n" + "\n".join(extracted_contents)
                     
                     # Replace the search line with the query and results
                     lines[idx] = f"SEARCH: {query}\n\nSearch Results:\n{search_results}\n"
@@ -499,6 +566,7 @@ class Reasoning:
         temperature: Optional[float] = None,
         max_retries: int = 3,  # Parameter for maximum retries
         web_search_enabled: bool = True,  # Enable/disable web search for this task
+        extract_url_content: Optional[bool] = None,  # Enable/disable URL content extraction
         **kwargs
     ) -> str:
         """
@@ -511,6 +579,7 @@ class Reasoning:
             temperature: Sampling temperature
             max_retries: Maximum number of retry attempts for each subtask (default: 3)
             web_search_enabled: Whether to enable web search for this task (default: True)
+            extract_url_content: Whether to extract content from URLs found in search results (default: None, uses the instance setting)
             **kwargs: Additional parameters for the LLM
             
         Returns:
@@ -538,8 +607,10 @@ class Reasoning:
             print(f"只执行前 {self.max_steps} 个子任务\n")
             subtasks = subtasks[:self.max_steps]
         
-        # Store the original web search setting
+        # Store the original settings
         original_web_search = self.web_search
+        original_extract_url_content = self.extract_url_content
+        original_url_extractor = self.url_extractor
         
         # Temporarily disable web search if requested
         if not web_search_enabled:
@@ -547,6 +618,16 @@ class Reasoning:
             print("🔍 网络搜索功能已禁用")
         elif self.web_search:
             print("🔍 网络搜索功能已启用")
+        
+        # Temporarily modify URL extraction setting if specified
+        if extract_url_content is not None:
+            self.extract_url_content = extract_url_content
+            self.url_extractor = get_url_extractor() if extract_url_content else None
+            
+            if extract_url_content:
+                print("📄 URL内容提取功能已启用")
+            else:
+                print("📄 URL内容提取功能已禁用")
         
         try:
             # Execute the subtasks
@@ -559,8 +640,10 @@ class Reasoning:
                 **kwargs
             )
         finally:
-            # Restore the original web search setting
+            # Restore the original settings
             self.web_search = original_web_search
+            self.extract_url_content = original_extract_url_content
+            self.url_extractor = original_url_extractor
         
         # Aggregate the results
         final_result = self.aggregate_results(

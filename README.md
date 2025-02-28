@@ -9,6 +9,7 @@ A command-line tool for LLM-based research, multi-step reasoning, and content ge
 - Local file reading and processing
 - Multi-step reasoning and writing generation
 - Web search integration for retrieving real-time information
+- URL content extraction using docling
 - Interactive command-line interface with progress indicators
 - Continuous conversation with clarifying questions
 - Detailed progress feedback during multi-step reasoning
@@ -120,27 +121,37 @@ python -m llm_research reason --topic "Complex physics problem" --steps 5 --retr
 python examples/retry_reasoning.py --task "Analyze the impact of quantum computing on cryptography" --retries 4
 ```
 
-#### Web Search Integration
+#### Web Search and URL Content Extraction
 
 The system now includes web search capabilities that allow the LLM to retrieve real-time information from the internet during the reasoning process:
 
 - The LLM can search the web for information when solving subtasks
 - Web search is powered by the Bocha API, which provides comprehensive search results
 - The `--web-search/--no-web-search` flag enables or disables web search (default: enabled)
+- The `--extract-url/--no-extract-url` flag enables or disables URL content extraction (default: enabled)
 - The `--bocha-api-key` parameter allows you to provide your Bocha API key directly
 
 This feature is particularly useful for tasks that require up-to-date information or facts that the LLM might not have in its training data. The LLM can autonomously decide when to search for information and incorporate the search results into its reasoning process.
 
+The URL content extraction feature enhances web search by:
+- Analyzing search results to identify the most relevant URLs
+- Extracting the full content from those URLs using the docling library
+- Incorporating the extracted content into the reasoning context
+- Providing more comprehensive information than just search result snippets
+
 Example usage:
 ```bash
-# Run reasoning with web search
-python -m llm_research reason --topic "Latest developments in AI" --web-search --bocha-api-key YOUR_API_KEY
+# Run reasoning with web search and URL extraction
+python -m llm_research reason --topic "Latest developments in AI" --web-search --extract-url --bocha-api-key YOUR_API_KEY
+
+# Run reasoning with web search but without URL extraction
+python -m llm_research reason --topic "Latest developments in AI" --web-search --no-extract-url --bocha-api-key YOUR_API_KEY
 
 # Run reasoning without web search
 python -m llm_research reason --topic "Philosophical concepts" --no-web-search
 
 # Use the example script
-python examples/web_search_reasoning.py --task "Current global economic trends" --bocha-api-key YOUR_API_KEY
+python examples/reasoning_with_url_extraction.py --task "Current global economic trends" --bocha-api-key YOUR_API_KEY
 ```
 
 You can also set the Bocha API key in your `.env` file:
@@ -148,6 +159,36 @@ You can also set the Bocha API key in your `.env` file:
 # Bocha API Configuration
 BOCHA_API_KEY=your_bocha_api_key_here
 ```
+
+#### URL Content Extraction
+
+The system now includes URL content extraction capabilities using the docling library:
+
+- Extract content from any URL and convert it to markdown, text, or HTML format
+- Use the extracted content for research, analysis, or as input for LLM processing
+- Save the extracted content to a file or display it directly in the console
+
+This feature is particularly useful for gathering information from websites, blogs, articles, or documentation for analysis by the LLM.
+
+Example usage:
+```bash
+# Extract content from a URL and display it in markdown format
+python -m llm_research extract_url --url https://example.com --format markdown
+
+# Extract content and save it to a file
+python -m llm_research extract_url --url https://example.com --format text --output extracted_content.txt
+
+# Use the test script
+python tests/test_url_extraction.py --url https://example.com --format html --output extracted.html
+
+# Extract and analyze content using the example script
+python examples/url_extraction.py --url https://example.com --analyze --provider openai
+```
+
+The supported output formats are:
+- `markdown`: Structured markdown format (default)
+- `text`: Plain text format
+- `html`: HTML format
 
 #### Progress Indicators
 

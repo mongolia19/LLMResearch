@@ -8,3 +8,4 @@ rich>=13.0.0
 # Optional extensions
 tiktoken>=0.5.0  # For token counting with OpenAI models
 pypdf>=3.15.0    # For PDF file support
+docling>=0.1.0   # For URL content extraction
