@@ -37,7 +37,9 @@ class Reasoning:
         max_steps: int = 5,
         temperature: float = 0.7,
         web_search: Optional[BochaWebSearch] = None,
-        extract_url_content: bool = True
+        extract_url_content: bool = True,
+        ws_handler: Optional[Callable[[str], None]] = None,
+        timeout: Optional[float] = 30.0
     ):
         """
         Initialize the reasoning manager.
@@ -48,6 +50,8 @@ class Reasoning:
             temperature: Sampling temperature for LLM calls
             web_search: Web search tool for retrieving information (optional)
             extract_url_content: Whether to extract content from URLs found in search results (default: True)
+            ws_handler: WebSocket handler function for sending logs to UI (optional)
+            timeout: Maximum time in seconds for each reasoning step (default: 30.0)
         """
         self.llm = llm
         self.max_steps = max_steps
@@ -56,6 +60,17 @@ class Reasoning:
         self.extract_url_content = extract_url_content
         self.url_extractor = get_url_extractor() if extract_url_content else None
         self.steps: List[ReasoningStep] = []
+        self.ws_handler = ws_handler
+        self.timeout = timeout
+
+    def _log(self, message: str) -> None:
+        """Send log message to UI if ws_handler is available"""
+        if self.ws_handler:
+            self.ws_handler({
+                "type": "log",
+                "message": message,
+                "timestamp": time.time()
+            })
     
     def add_step(self, prompt: str, response: str = "", metadata: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -98,6 +113,7 @@ class Reasoning:
         prompt: str,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        timeout: Optional[float] = None,
         **kwargs
     ) -> str:
         """
@@ -107,11 +123,21 @@ class Reasoning:
             prompt: The prompt for this step
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature
+            timeout: Maximum time in seconds for this step (default: instance timeout)
             **kwargs: Additional parameters for the LLM
             
         Returns:
             The generated response
+            
+        Raises:
+            TimeoutError: If the step exceeds the timeout duration
         """
+        # Use instance timeout if not specified
+        timeout = timeout if timeout is not None else self.timeout
+        
+        # Show thinking indicator
+        step_num = len(self.steps) + 1
+        print(f"💭 步骤 {step_num}: 模型思考中... (timeout: {timeout}s)")
         # Use the provided temperature or the default
         temp = temperature if temperature is not None else self.temperature
         
@@ -119,15 +145,29 @@ class Reasoning:
         step_num = len(self.steps) + 1
         print(f"💭 步骤 {step_num}: 模型思考中...")
         
-        # Generate the response
-        response = self.llm.generate(
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temp,
-            **kwargs
-        )
-        
-        response_text = response["text"]
+        try:
+            # Generate the response with timeout
+            response = self.llm.generate(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temp,
+                timeout=timeout,
+                **kwargs
+            )
+            
+            response_text = response["text"]
+            
+        except TimeoutError:
+            error_msg = f"❌ 步骤 {step_num} 超时 (超过 {timeout} 秒)"
+            print(error_msg)
+            self._log(error_msg)
+            raise TimeoutError(error_msg)
+            
+        except Exception as e:
+            error_msg = f"❌ 步骤 {step_num} 出错: {str(e)}"
+            print(error_msg)
+            self._log(error_msg)
+            raise
         
         # Check if the response contains a search request
         if self.web_search and "SEARCH:" in response_text:
@@ -152,18 +192,22 @@ class Reasoning:
                     extracted_contents = []
                     if self.extract_url_content and self.url_extractor:
                         # Check if search was successful
+                        print(f"🔍 搜索结果: {search_results}")
                         if search_results["success"] and search_results.get("results"):
                             urls = []
                             url_summaries = []
                             
                             # Collect URLs and their summaries
-                            for result in search_results["results"]:
+                            print(f"🔍 处理 {len(search_results['results'])} 个搜索结果")
+                            for i, result in enumerate(search_results["results"]):
+                                print(f"🔍 处理结果 {i+1}: {result['name']}")
                                 urls.append(result["url"])
                                 url_summaries.append({
                                     "url": result["url"],
                                     "title": result["name"],
                                     "summary": result["summary"]
                                 })
+                            print(f"✅ 收集到 {len(urls)} 个URL")
                             
                             if urls:
                                 print(f"📄 从搜索结果中发现 {len(urls)} 个URL，提取内容...")
@@ -187,15 +231,31 @@ class Reasoning:
                                 # Parse the response to get the selected URL indices
                                 selected_indices = []
                                 selection_text = url_selection_response["text"].strip()
+                                print(f"🔍 URL选择响应: {selection_text}")
+                                print(f"🔍 可用URL数量: {len(urls)}")
                                 
                                 # Try to parse numbers from the response
                                 import re
-                                for num in re.findall(r'\d+', selection_text):
+                                numbers = re.findall(r'\d+', selection_text)
+                                print(f"🔍 解析到的数字: {numbers}")
+                                
+                                # Only accept numbers that could be valid indices (1-N)
+                                max_valid_number = len(urls)
+                                valid_numbers = [num for num in numbers if num.isdigit() and 1 <= int(num) <= max_valid_number]
+                                print(f"🔍 有效数字范围: 1-{max_valid_number}")
+                                print(f"🔍 有效数字: {valid_numbers}")
+                                
+                                for num in valid_numbers:
                                     try:
                                         idx = int(num) - 1  # Convert to 0-based index
+                                        print(f"🔍 尝试索引: {idx}")
                                         if 0 <= idx < len(urls):
                                             selected_indices.append(idx)
-                                    except ValueError:
+                                            print(f"✅ 有效索引: {idx}")
+                                        else:
+                                            print(f"❌ 无效索引: {idx} (超出范围)")
+                                    except ValueError as e:
+                                        print(f"❌ 数值转换错误: {e}")
                                         continue
                                 
                                 # Limit to at most 3 URLs
@@ -406,8 +466,8 @@ class Reasoning:
         total_subtasks = len(subtasks)
         
         for i, subtask in enumerate(subtasks):
-            print(f"\n🔄 执行子任务 {i+1}/{total_subtasks}: \"{subtask}\"")
-            print("思考中...\n")
+            self._log(f"\n🔄 执行子任务 {i+1}/{total_subtasks}: \"{subtask}\"")
+            self._log("思考中...\n")
             
             # Track retry attempts
             retry_count = 0
@@ -600,10 +660,10 @@ class Reasoning:
         Returns:
             The final result
         """
-        print("\n==== 开始多步骤推理 ====")
-        print(f"任务: \"{task}\"")
-        print(f"最大步骤数: {self.max_steps}")
-        print("=======================\n")
+        self._log("\n==== 开始多步骤推理 ====")
+        self._log(f"任务: \"{task}\"")
+        self._log(f"最大步骤数: {self.max_steps}")
+        self._log("=======================\n")
         
         # Decompose the task into subtasks
         subtasks = self.task_decomposition(

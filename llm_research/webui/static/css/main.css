@@ -1,0 +1,386 @@
+/* Base styles */
+:root {
+    --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --border-radius: 8px;
+    --transition-speed: 0.3s;
+    
+    /* Light theme variables (default) */
+    --bg-color: #f5f5f5;
+    --text-color: #333;
+    --primary-color: #2196f3;
+    --primary-color-hover: #1976d2;
+    --secondary-color: #e0e0e0;
+    --border-color: #ddd;
+    --input-bg-color: #fff;
+    --message-user-bg: #e3f2fd;
+    --message-assistant-bg: #fff;
+    --message-system-bg: #f0f0f0;
+    --modal-overlay: rgba(0, 0, 0, 0.5);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-family);
+    line-height: 1.6;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    transition: background-color var(--transition-speed), color var(--transition-speed);
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background-color: var(--primary-color);
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.icon-button {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: var(--border-radius);
+    transition: background-color var(--transition-speed);
+}
+
+.icon-button:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Main content */
+.app-main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Chat container */
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    background-color: var(--bg-color);
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.message {
+    margin-bottom: 1rem;
+    max-width: 80%;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user {
+    margin-left: auto;
+}
+
+.message.assistant {
+    margin-right: auto;
+}
+
+.message.system {
+    margin: 1rem auto;
+    max-width: 90%;
+    text-align: center;
+    opacity: 0.8;
+}
+
+.message-content {
+    padding: 0.75rem 1rem;
+    border-radius: var(--border-radius);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.message.user .message-content {
+    background-color: var(--message-user-bg);
+    border-top-right-radius: 0;
+}
+
+.message.assistant .message-content {
+    background-color: var(--message-assistant-bg);
+    border-top-left-radius: 0;
+}
+
+.message.system .message-content {
+    background-color: var(--message-system-bg);
+}
+
+/* Chat input */
+.chat-input {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--bg-color);
+}
+
+#user-input {
+    width: 100%;
+    min-height: 60px;
+    max-height: 200px;
+    padding: 0.75rem;
+    border-radius: var(--border-radius);
+    resize: vertical;
+    font-family: var(--font-family);
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg-color);
+    color: var(--text-color);
+}
+
+.input-controls {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.5rem;
+}
+
+#send-button {
+    padding: 0.5rem 1.5rem;
+    border-radius: var(--border-radius);
+    border: none;
+    background-color: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    transition: background-color var(--transition-speed);
+}
+
+#send-button:hover {
+    background-color: var(--primary-color-hover);
+}
+
+/* Settings panel */
+.settings-panel {
+    width: 300px;
+    padding: 1rem;
+    border-left: 1px solid var(--border-color);
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    transform: translateX(100%);
+    transition: transform var(--transition-speed);
+}
+
+.settings-panel.active {
+    transform: translateX(0);
+}
+
+.setting-group {
+    margin-bottom: 1.5rem;
+}
+
+.setting-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.setting-group select,
+.setting-group input[type="number"],
+.setting-group input[type="range"] {
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg-color);
+    color: var(--text-color);
+}
+
+.setting-group button {
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: var(--border-radius);
+    border: none;
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color var(--transition-speed);
+}
+
+.setting-group button:hover {
+    background-color: var(--border-color);
+}
+
+/* File upload modal */
+.file-upload-modal,
+.reasoning-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--modal-overlay);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-speed);
+}
+
+.file-upload-modal.active,
+.reasoning-modal.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-content {
+    background-color: var(--bg-color);
+    padding: 2rem;
+    border-radius: var(--border-radius);
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.modal-content h3 {
+    margin-bottom: 1.5rem;
+    color: var(--text-color);
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.modal-buttons button {
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    border: none;
+    cursor: pointer;
+    transition: background-color var(--transition-speed);
+}
+
+.modal-buttons button[type="button"] {
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+}
+
+.modal-buttons button[type="button"]:hover {
+    background-color: var(--border-color);
+}
+
+.modal-buttons button[type="submit"],
+.modal-buttons button#start-reasoning {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.modal-buttons button[type="submit"]:hover,
+.modal-buttons button#start-reasoning:hover {
+    background-color: var(--primary-color-hover);
+}
+
+/* Reasoning form */
+.reasoning-form .form-group {
+    margin-bottom: 1rem;
+}
+
+.reasoning-form label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.reasoning-form textarea,
+.reasoning-form input {
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg-color);
+    color: var(--text-color);
+}
+
+.reasoning-form textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+/* Reasoning progress */
+.reasoning-progress {
+    margin-top: 1.5rem;
+}
+
+.progress-container {
+    height: 10px;
+    background-color: var(--secondary-color);
+    border-radius: var(--border-radius);
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background-color: var(--primary-color);
+    width: 0;
+    transition: width 0.3s ease-in-out;
+}
+
+.progress-status {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text-color);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .app-main {
+        flex-direction: column;
+    }
+    
+    .settings-panel {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+        transform: translateY(100%);
+        position: absolute;
+        bottom: 0;
+        max-height: 80vh;
+    }
+    
+    .settings-panel.active {
+        transform: translateY(0);
+    }
+    
+    .message {
+        max-width: 90%;
+    }
+    
+    .modal-content {
+        width: 95%;
+        padding: 1.5rem;
+    }
+}

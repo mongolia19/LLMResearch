@@ -1,0 +1,112 @@
+/* Theme styles */
+
+/* Dark theme */
+body.theme-dark {
+    --bg-color: #1e1e1e;
+    --text-color: #e0e0e0;
+    --primary-color: #2196f3;
+    --primary-color-hover: #1976d2;
+    --secondary-color: #333;
+    --border-color: #444;
+    --input-bg-color: #2d2d2d;
+    --message-user-bg: #1e3a5f;
+    --message-assistant-bg: #2d2d2d;
+    --message-system-bg: #333;
+    --modal-overlay: rgba(0, 0, 0, 0.7);
+}
+
+/* Light theme */
+body.theme-light {
+    --bg-color: #f5f5f5;
+    --text-color: #333;
+    --primary-color: #2196f3;
+    --primary-color-hover: #1976d2;
+    --secondary-color: #e0e0e0;
+    --border-color: #ddd;
+    --input-bg-color: #fff;
+    --message-user-bg: #e3f2fd;
+    --message-assistant-bg: #fff;
+    --message-system-bg: #f0f0f0;
+    --modal-overlay: rgba(0, 0, 0, 0.5);
+}
+
+/* Sepia theme */
+body.theme-sepia {
+    --bg-color: #f4ecd8;
+    --text-color: #5b4636;
+    --primary-color: #a67c52;
+    --primary-color-hover: #8a6642;
+    --secondary-color: #e6dcc6;
+    --border-color: #d1c7b7;
+    --input-bg-color: #faf6e9;
+    --message-user-bg: #e6dcc6;
+    --message-assistant-bg: #faf6e9;
+    --message-system-bg: #e6dcc6;
+    --modal-overlay: rgba(91, 70, 54, 0.5);
+}
+
+/* High contrast theme */
+body.theme-high-contrast {
+    --bg-color: #000;
+    --text-color: #fff;
+    --primary-color: #ffff00;
+    --primary-color-hover: #cccc00;
+    --secondary-color: #333;
+    --border-color: #fff;
+    --input-bg-color: #000;
+    --message-user-bg: #00008b;
+    --message-assistant-bg: #000;
+    --message-system-bg: #333;
+    --modal-overlay: rgba(0, 0, 0, 0.9);
+}
+
+/* Theme-specific overrides */
+
+/* Dark theme overrides */
+body.theme-dark .app-header {
+    background-color: #1a1a1a;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+body.theme-dark .message-content {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+body.theme-dark #user-input {
+    border-color: #444;
+}
+
+/* Sepia theme overrides */
+body.theme-sepia .app-header {
+    background-color: #a67c52;
+}
+
+body.theme-sepia .icon-button {
+    color: #f4ecd8;
+}
+
+/* High contrast theme overrides */
+body.theme-high-contrast .app-header {
+    background-color: #000;
+    border-bottom: 2px solid #fff;
+}
+
+body.theme-high-contrast .message-content {
+    border: 2px solid #fff;
+}
+
+body.theme-high-contrast .icon-button {
+    color: #ffff00;
+}
+
+body.theme-high-contrast #send-button {
+    color: #000;
+}
+
+body.theme-high-contrast .settings-panel {
+    border-left: 2px solid #fff;
+}
+
+body.theme-high-contrast .chat-input {
+    border-top: 2px solid #fff;
+}

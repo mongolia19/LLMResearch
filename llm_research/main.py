@@ -19,46 +19,7 @@ from llm_research.web_search import get_web_search_tool
 from llm_research.url_extractor import get_url_extractor
 
 
-def get_llm_provider(config: Config, provider_name: Optional[str] = None) -> BaseLLM:
-    """
-    Get an LLM provider instance based on the configuration.
-    
-    Args:
-        config: The configuration manager
-        provider_name: The name of the provider to use (optional)
-        
-    Returns:
-        An LLM provider instance
-    """
-    # Get the provider configuration
-    provider_config = config.get_provider_config(provider_name)
-    
-    # Check if the API key is set
-    if not provider_config.get("api_key"):
-        # Prompt for the API key
-        api_key = getpass.getpass(f"Enter API key for {provider_name or 'default provider'}: ")
-        provider_config["api_key"] = api_key
-        
-        # Save the API key
-        config.set_provider_config(provider_name or config.config.get("default_provider", "openai"), provider_config)
-    
-    # Create the LLM provider instance
-    provider_type = provider_config.get("type", "openai")
-    
-    if provider_type == "openai":
-        return OpenAILLM(
-            model=provider_config.get("model", "gpt-3.5-turbo"),
-            base_url=provider_config.get("base_url", "https://api.openai.com/v1"),
-            api_key=provider_config["api_key"]
-        )
-    else:
-        return CustomLLM(
-            model=provider_config.get("model", "default"),
-            base_url=provider_config.get("base_url", ""),
-            api_key=provider_config["api_key"],
-            **provider_config.get("options", {})
-        )
-
+from llm_research.llm import get_llm_provider
 
 @click.group()
 @click.version_option()
@@ -516,6 +477,60 @@ def extract_url(url: str, format: str, output: Optional[str]):
             click.echo(content)
     except Exception as e:
         click.echo(f"Error extracting content: {e}", err=True)
+
+
+@cli.command()
+@click.option("--host", default="127.0.0.1", help="The host to bind to")
+@click.option("--port", default=5000, type=int, help="The port to bind to")
+@click.option("--debug/--no-debug", default=False, help="Enable debug mode")
+def webui(host: str, port: int, debug: bool):
+    """
+    Launch the web user interface.
+    
+    This command starts a web server that provides a user-friendly interface
+    for interacting with LLMResearch.
+    """
+    # Check for required packages
+    missing_packages = []
+    try:
+        import flask
+    except ImportError:
+        missing_packages.append("flask")
+    try:
+        import flask_cors
+    except ImportError:
+        missing_packages.append("flask-cors")
+    try:
+        import flask_socketio
+    except ImportError:
+        missing_packages.append("flask-socketio")
+    try:
+        import socketio
+    except ImportError:
+        missing_packages.append("python-socketio")
+    try:
+        import engineio
+    except ImportError:
+        missing_packages.append("python-engineio")
+    
+    if missing_packages:
+        click.echo("Error: Missing required WebUI dependencies:")
+        click.echo("\n".join(f"- {pkg}" for pkg in missing_packages))
+        click.echo("\nPlease install them with:")
+        click.echo("pip install " + " ".join(missing_packages))
+        return
+    
+    try:
+        click.echo(f"Starting WebUI server at http://{host}:{port}")
+        click.echo("Press Ctrl+C to stop the server")
+        
+        # Import the WebUI server
+        from llm_research.webui.server import run_server
+        
+        # Run the server
+        run_server(host=host, port=port, debug=debug)
+    except Exception as e:
+        click.echo(f"Error starting WebUI server: {e}", err=True)
 
 
 def main():

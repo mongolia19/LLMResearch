@@ -1,0 +1,10 @@
+{
+  "theme": "sepia",
+  "max_history": 100,
+  "web_search_enabled": true,
+  "extract_url_content": true,
+  "temperature": 0.7,
+  "max_tokens": null,
+  "reasoning_steps": 5,
+  "retries": 3
+}
