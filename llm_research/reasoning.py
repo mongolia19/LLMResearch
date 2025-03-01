@@ -521,7 +521,7 @@ class Reasoning:
         print(f"🔍 验证结果: {validation_text[:100]}...")
         
         # Check if the validation response indicates completion
-        is_completed = validation_text.startswith("yes")
+        is_completed = validation_text.startswith("yes") or validation_text.startswith("**yes**")
         
         return is_completed
     
