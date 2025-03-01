@@ -543,6 +543,7 @@ class Reasoning:
         response: str,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        timeout: Optional[float] = None,
         **kwargs
     ) -> bool:
         """
@@ -553,37 +554,51 @@ class Reasoning:
             response: The response to validate
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature
+            timeout: Maximum time in seconds for validation
             **kwargs: Additional parameters for the LLM
             
         Returns:
             True if the subtask is completed, False otherwise
         """
-        # Construct the validation prompt
-        validation_prompt = "Evaluate if the following subtask has been completed successfully based on the response.\n\n"
-        validation_prompt += f"Subtask: {subtask}\n\n"
-        validation_prompt += f"Response: {response}\n\n"
-        validation_prompt += "Is the subtask completed successfully? Answer with 'Yes' or 'No' and provide a brief explanation.\n"
-        validation_prompt += "Answer:"
-        
-        # Execute the validation step
-        print("💭 验证中...")
-        validation_response = self.llm.generate(
-            prompt=validation_prompt,
-            max_tokens=max_tokens or 100,  # Use a smaller token limit for validation
-            temperature=temperature or 0.3,  # Use a lower temperature for more deterministic results
-            **kwargs
-        )
-        
-        # Extract the validation result
-        validation_text = validation_response["text"].strip().lower()
-        
-        # Log the validation response for debugging
-        print(f"🔍 验证结果: {validation_text[:100]}...")
-        
-        # Check if the validation response indicates completion
-        is_completed = validation_text.startswith("yes".lower()) or validation_text.startswith("**yes**".lower())
-        
-        return is_completed
+        try:
+            # Construct the validation prompt
+            validation_prompt = """Evaluate if the following subtask has been completed successfully based on the response.
+            
+            Instructions:
+            1. Only answer with "Yes" or "No"
+            2. Do not provide any explanation
+            3. Consider the response complete if it addresses the subtask
+            
+            Subtask: {subtask}
+            
+            Response: {response}
+            
+            Answer:""".format(subtask=subtask, response=response)
+            
+            # Execute the validation step with timeout
+            print("💭 验证中...")
+            validation_response = self.llm.generate(
+                prompt=validation_prompt,
+                max_tokens=10,  # Strict limit for yes/no response
+                temperature=0.1,  # Very low temperature for deterministic response
+                timeout=timeout or self.timeout,
+                **kwargs
+            )
+            
+            # Extract and clean the validation result
+            validation_text = validation_response["text"].strip().lower()
+            validation_text = validation_text.split()[0]  # Take only first word
+            
+            # Log the validation response for debugging
+            print(f"🔍 验证结果: {validation_text}")
+            
+            # Check if the validation response indicates completion
+            return validation_text.startswith("yes")
+            
+        except Exception as e:
+            print(f"❌ 验证错误: {str(e)}")
+            # If validation fails, assume the subtask is incomplete
+            return False
     
     def aggregate_results(
         self,

@@ -132,12 +132,29 @@ class ReasoningAdapter:
         
         prompt += "Result:"
         
-        # Execute the step
-        result = self.reasoning.execute_step(
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temperature or self.temperature
-        )
+        try:
+            # Execute the step with timeout
+            result = self.reasoning.execute_step(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature or self.temperature,
+                timeout=timeout
+            )
+            
+            # Call event handler if set
+            if self.on_subtask_complete:
+                self.on_subtask_complete(subtask, result)
+                
+        except TimeoutError as e:
+            error_msg = f"Subtask timed out: {str(e)}"
+            if self.on_subtask_complete:
+                self.on_subtask_complete(subtask, error_msg)
+            raise
+        except Exception as e:
+            error_msg = f"Subtask error: {str(e)}"
+            if self.on_subtask_complete:
+                self.on_subtask_complete(subtask, error_msg)
+            raise
         
         # Call event handler if set
         if self.on_subtask_complete:
