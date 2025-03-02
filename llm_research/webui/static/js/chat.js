@@ -215,18 +215,39 @@ class ChatInterface {
      * Clear the chat history.
      */
     clearHistory() {
-        // Keep only system messages
-        const systemMessages = Array.from(this.messagesContainer.querySelectorAll('.message.system'));
+        // Keep system and assistant messages (preserve reasoning process)
+        const preservedMessages = Array.from(this.messagesContainer.querySelectorAll('.message.system, .message.assistant'));
         
         // Clear the container
         this.messagesContainer.innerHTML = '';
         
-        // Add back the system messages
-        systemMessages.forEach(message => {
+        // Add back the preserved messages
+        preservedMessages.forEach(message => {
             this.messagesContainer.appendChild(message);
         });
         
         // Add a system message indicating the history was cleared
         this.addMessage('system', '聊天历史已清除');
+    }
+
+    /**
+     * Show reasoning steps in the input area.
+     *
+     * @param {string} content - The content to display
+     */
+    showReasoningSteps(content) {
+        // Add to chat history first
+        const messageId = this.addMessage('system', content);
+        
+        // Create a temporary element to hold the content
+        const tempElement = document.createElement('div');
+        tempElement.className = 'reasoning-steps';
+        tempElement.innerHTML = this.formatMessageContent(content);
+        
+        // Insert before the input element
+        this.inputElement.parentNode.insertBefore(tempElement, this.inputElement);
+        
+        // Scroll to show the new content
+        this.scrollToBottom();
     }
 }

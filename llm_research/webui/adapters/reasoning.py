@@ -90,6 +90,13 @@ class ReasoningAdapter:
             temperature=temperature or self.temperature
         )
         
+        # Add decomposition results to chat history
+        if self.chat_interface:
+            decomposition_msg = "任务分解完成，生成以下子任务:\n" + "\n".join(
+                [f"{i+1}. {subtask}" for i, subtask in enumerate(subtasks)]
+            )
+            self.chat_interface.addMessage('assistant', f"🤔 任务分解结果：\n{decomposition_msg}")
+        
         # Call event handler if set
         if self.on_task_decomposition:
             self.on_task_decomposition(subtasks)
@@ -133,17 +140,38 @@ class ReasoningAdapter:
         prompt += "Result:"
         
         try:
-            # Execute the step with timeout
-            result = self.reasoning.execute_step(
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=temperature or self.temperature,
-                timeout=timeout
-            )
+            # Add subtask start message to chat
+            if self.chat_interface:
+                self.chat_interface.addMessage(
+                    'system',
+                    f"开始子任务 1/1: {subtask}"  # Temporary fixed values for testing
+                )
             
-            # Call event handler if set
-            if self.on_subtask_complete:
-                self.on_subtask_complete(subtask, result)
+            try:
+                # Execute the step with timeout
+                result = self.reasoning.execute_step(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature or self.temperature,
+                    timeout=timeout
+                )
+                
+                # Show reasoning steps in both input area and chat history
+                if self.chat_interface:
+                    message = f"子任务完成:\n{result}"
+                    self.chat_interface.showReasoningSteps(message)
+                    self.chat_interface.addMessage('assistant', message)
+                    
+            except Exception as e:
+                error_msg = f"Subtask {i+1} failed: {str(e)}"
+                print(error_msg)
+                
+                # Show error in both input area and chat history
+                if self.chat_interface:
+                    message = f"子任务 {i+1}/{len(subtasks)} 失败: {error_msg}"
+                    self.chat_interface.showReasoningSteps(message)
+                    self.chat_interface.addMessage('system', message)
+                raise
                 
         except TimeoutError as e:
             error_msg = f"Subtask timed out: {str(e)}"
@@ -172,7 +200,7 @@ class ReasoningAdapter:
     ) -> str:
         """
         Aggregate the results of multiple subtasks.
-        
+
         Args:
             task: The original task
             subtasks: The subtasks that were executed
@@ -183,6 +211,12 @@ class ReasoningAdapter:
         Returns:
             The aggregated result
         """
+        # Show aggregation start in chat
+        if self.chat_interface:
+            self.chat_interface.addMessage(
+                'system',
+                f"开始整合{len(subtasks)}个子任务的结果..."
+            )
         # Call event handler if set
         if self.on_aggregation_start:
             self.on_aggregation_start()

@@ -123,6 +123,11 @@ class ReasoningInterface {
             this.handleReasoningError(data);
         });
 
+        // Subtask error event
+        socket.on('subtask_error', (data) => {
+            this.handleSubtaskError(data);
+        });
+
         // Reasoning log event
         socket.on('reasoning_log', (data) => {
             this.handleReasoningLog(data);
@@ -360,5 +365,27 @@ class ReasoningInterface {
         setTimeout(() => {
             this.resetReasoningUI();
         }, 3000);
+    }
+
+    /**
+     * Handle subtask error event.
+     *
+     * @param {Object} data - The event data
+     */
+    handleSubtaskError(data) {
+        // Calculate progress percentage
+        const progress = 20 + ((data.index + 1) / this.subtasks.length) * 60;
+        
+        // Update progress bar
+        this.reasoningProgressBar.style.width = `${progress}%`;
+        
+        // Update status text
+        this.reasoningStatus.textContent = `子任务 ${data.index + 1}/${this.subtasks.length} 失败`;
+        
+        // Add error message to chat
+        this.chatInterface.addMessage(
+            'system',
+            `子任务 ${data.index + 1}/${this.subtasks.length} 失败: ${data.error}`
+        );
     }
 }
