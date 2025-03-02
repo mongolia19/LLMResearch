@@ -388,4 +388,73 @@ class ReasoningInterface {
             `子任务 ${data.index + 1}/${this.subtasks.length} 失败: ${data.error}`
         );
     }
+    
+    /**
+     * Handle reasoning log event.
+     *
+     * @param {Object} data - The event data
+     */
+    handleReasoningLog(data) {
+        // Handle structured log messages
+        if (typeof data === 'object' && data.type) {
+            // The enhanced_ws_handler in the ReasoningAdapter will handle displaying
+            // these messages in the chat history, so we don't need to duplicate them here.
+            // Just update the UI based on the log type
+            
+            const message = data.message || '';
+            
+            // Update progress bar and status based on log type
+            switch (data.type) {
+                case 'decomposition_start':
+                    this.reasoningStatus.textContent = '分析任务中...';
+                    this.reasoningProgressBar.style.width = '10%';
+                    break;
+                    
+                case 'decomposition_complete':
+                    this.reasoningStatus.textContent = '任务分解完成';
+                    this.reasoningProgressBar.style.width = '20%';
+                    
+                    // Update subtasks if available
+                    if (data.subtasks && Array.isArray(data.subtasks)) {
+                        this.subtasks = data.subtasks;
+                        this.currentSubtaskIndex = 0;
+                    }
+                    break;
+                    
+                case 'subtask_start':
+                    if (data.subtask_index !== undefined && data.total_subtasks) {
+                        const progress = 20 + (data.subtask_index / data.total_subtasks) * 60;
+                        this.reasoningProgressBar.style.width = `${progress}%`;
+                        this.reasoningStatus.textContent = `执行子任务 ${data.subtask_index + 1}/${data.total_subtasks}`;
+                    }
+                    break;
+                    
+                case 'subtask_complete':
+                    if (data.subtask_index !== undefined && data.total_subtasks) {
+                        const progress = 20 + ((data.subtask_index + 1) / data.total_subtasks) * 60;
+                        this.reasoningProgressBar.style.width = `${progress}%`;
+                        this.reasoningStatus.textContent = `子任务 ${data.subtask_index + 1}/${data.total_subtasks} 完成`;
+                    }
+                    break;
+                    
+                case 'aggregation_start':
+                    this.reasoningProgressBar.style.width = '80%';
+                    this.reasoningStatus.textContent = '整合结果中...';
+                    break;
+                    
+                case 'aggregation_complete':
+                    this.reasoningProgressBar.style.width = '100%';
+                    this.reasoningStatus.textContent = '推理完成';
+                    break;
+            }
+        }
+        // Handle simple string log messages (legacy format)
+        else if (typeof data === 'string' || data.message) {
+            const message = typeof data === 'string' ? data : data.message;
+            // Only add non-empty messages to avoid cluttering the chat
+            if (message && message.trim()) {
+                this.chatInterface.addMessage('system', message);
+            }
+        }
+    }
 }

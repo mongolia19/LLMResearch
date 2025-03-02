@@ -72,7 +72,8 @@ class ApiClient {
                     web_search: options.web_search,
                     extract_url: options.extract_url,
                     retries: options.retries || 3,
-                    context_files: options.context_files || []
+                    context_files: options.context_files || [],
+                    conversation_id: this.activeConversationId  // Pass the active conversation ID
                 })
             });
 

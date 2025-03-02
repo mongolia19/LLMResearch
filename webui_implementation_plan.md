@@ -1,980 +1,371 @@
-# WebUI Implementation Plan for LLMResearch
+# WebUI 多步骤推理中间过程显示实现计划
 
-## Overview
+## 概述
 
-The current LLMResearch system is a powerful command-line tool with features like multi-step reasoning, web search integration, and URL content extraction. We'll add a web-based user interface that provides a chat-like experience while maintaining access to all existing functionality.
+本文档详细描述了如何在WebUI中实现多步骤推理中间过程的实时显示。这个功能将使用户能够在对话历史中看到推理的每个步骤，而不仅仅是最终结果，从而提升用户体验和系统透明度。
 
-## Architecture
+## 实现步骤
 
-We'll implement a client-server architecture:
+### 1. 增强核心推理引擎 (llm_research/reasoning.py)
 
-1. **Backend**: Flask API server that interfaces with the existing LLMResearch codebase
-2. **Frontend**: Modern web interface built with HTML, CSS, and JavaScript
-
-## Project Structure
-
-```
-llm_research/
-├── webui/
-│   ├── __init__.py           # Package initialization
-│   ├── server.py             # Flask application
-│   ├── api.py                # API endpoints
-│   ├── config.py             # WebUI configuration
-│   ├── adapters/             # Adapters for LLMResearch functionality
-│   │   ├── __init__.py
-│   │   ├── conversation.py   # Conversation adapter
-│   │   ├── reasoning.py      # Reasoning adapter
-│   │   └── file_handler.py   # File handling adapter
-│   └── static/               # Static files for the frontend
-│       ├── css/
-│       │   ├── main.css      # Main stylesheet
-│       │   └── themes.css    # Theme stylesheets
-│       ├── js/
-│       │   ├── app.js        # Main application logic
-│       │   ├── api.js        # API client
-│       │   ├── chat.js       # Chat interface logic
-│       │   └── settings.js   # Settings panel logic
-│       ├── img/              # Images and icons
-│       └── index.html        # Main HTML page
-└── cli.py                    # Updated CLI with WebUI launch option
-```
-
-## Implementation Steps
-
-### 1. Create Backend API Server
-
-We'll create a Flask application that exposes the LLMResearch functionality through REST API endpoints.
-
-#### server.py
+#### 1.1 添加任务分解事件
 
 ```python
-"""
-Flask server for the LLMResearch WebUI.
-"""
+# 在task_decomposition方法中添加分解开始事件
+self._log({
+    "type": "decomposition_start",
+    "message": f"🔍 分析任务: \"{task}\"\n正在将任务分解为子任务...",
+    "task": task
+})
 
-import os
-from flask import Flask, send_from_directory
-from flask_cors import CORS
-from flask_socketio import SocketIO
+# 在需要重试时添加重试事件
+self._log({
+    "type": "decomposition_retry",
+    "message": f"⚠️ 生成的子任务数量 ({len(subtasks)}) 远超最大步骤数 ({self.max_steps})\n正在重新分解任务 (尝试 {retry_count}/{max_retries})...",
+    "retry_count": retry_count,
+    "max_retries": max_retries
+})
 
-def create_app(test_config=None):
-    """
-    Create and configure the Flask application.
+# 在分解完成时添加完成事件
+subtasks_formatted = "\n".join([f"{i+1}. {subtask}" for i, subtask in enumerate(subtasks)])
+self._log({
+    "type": "decomposition_complete",
+    "message": f"📋 已将任务分解为以下子任务:\n{subtasks_formatted}",
+    "subtasks": subtasks
+})
+```
+
+#### 1.2 添加子任务执行事件
+
+```python
+# 在execute_subtasks方法中添加子任务开始事件
+self._log({
+    "type": "subtask_start",
+    "message": f"\n🔄 执行子任务 {i+1}/{total_subtasks}: \"{subtask}\"\n思考中...",
+    "subtask_index": i,
+    "subtask": subtask,
+    "total_subtasks": total_subtasks
+})
+
+# 在需要重试时添加重试事件
+self._log({
+    "type": "subtask_retry",
+    "message": f"🔁 重试子任务 {i+1} (尝试 {retry_count}/{max_retries})...",
+    "subtask_index": i,
+    "retry_count": retry_count,
+    "max_retries": max_retries
+})
+
+# 在验证子任务前添加验证开始事件
+self._log({
+    "type": "subtask_validation_start",
+    "message": f"🔍 验证子任务 {i+1} 是否完成...",
+    "subtask_index": i
+})
+
+# 在子任务完成时添加完成事件
+self._log({
+    "type": "subtask_complete",
+    "message": f"✅ 子任务 {i+1}/{total_subtasks} 完成",
+    "subtask_index": i,
+    "subtask": subtask,
+    "response": response
+})
+
+# 在子任务未完成时添加未完成事件
+self._log({
+    "type": "subtask_incomplete",
+    "message": f"❌ 子任务 {i+1}/{total_subtasks} 未完成",
+    "subtask_index": i,
+    "subtask": subtask,
+    "response": response
+})
+
+# 在达到最大重试次数时添加最大重试事件
+self._log({
+    "type": "subtask_max_retries",
+    "message": f"⚠️ 达到最大重试次数 ({max_retries})，使用最后一次结果",
+    "subtask_index": i,
+    "subtask": subtask,
+    "response": response
+})
+```
+
+#### 1.3 添加结果聚合事件
+
+```python
+# 在aggregate_results方法中添加聚合开始事件
+self._log({
+    "type": "aggregation_start",
+    "message": "🧩 整合所有子任务结果\n生成最终答案...",
+    "task": task,
+    "subtasks_count": len(subtasks)
+})
+
+# 在聚合完成时添加完成事件
+self._log({
+    "type": "aggregation_complete",
+    "message": "✨ 任务完成!",
+    "result": aggregation
+})
+```
+
+### 2. 修改WebUI适配器 (llm_research/webui/adapters/reasoning.py)
+
+#### 2.1 添加chat_interface参数
+
+```python
+def __init__(
+    self,
+    llm: BaseLLM,
+    max_steps: int = 5,
+    temperature: float = 0.7,
+    web_search_enabled: bool = True,
+    extract_url_content: bool = True,
+    ws_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
+    chat_interface = None  # 添加chat_interface参数
+):
+    # ...
+    self.chat_interface = chat_interface  # 存储chat_interface引用
+    # ...
+```
+
+#### 2.2 实现enhanced_ws_handler函数
+
+```python
+def solve_task(
+    self,
+    task: str,
+    context: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    max_retries: int = 3
+) -> str:
+    # 保存原始ws_handler
+    original_ws_handler = self.reasoning.ws_handler
     
-    Args:
-        test_config: Test configuration to use (optional)
+    def enhanced_ws_handler(log_data):
+        # 调用原始ws_handler
+        if original_ws_handler:
+            original_ws_handler(log_data)
         
-    Returns:
-        The configured Flask application
-    """
-    # Create the Flask app
-    app = Flask(__name__, static_folder='static')
+        # 如果chat_interface可用，在聊天历史中显示
+        if self.chat_interface:
+            log_type = log_data.get("type")
+            message = log_data.get("message", "")
+            
+            if log_type == "decomposition_start":
+                # 任务分解开始
+                self.chat_interface.addMessage('system', f"🔍 {message}")
+            
+            elif log_type == "decomposition_complete":
+                # 任务分解完成
+                self.chat_interface.addMessage('assistant', f"📋 {message}")
+            
+            elif log_type == "subtask_start":
+                # 子任务开始
+                subtask_index = log_data.get("subtask_index", 0)
+                total_subtasks = log_data.get("total_subtasks", 1)
+                subtask = log_data.get("subtask", "")
+                self.chat_interface.addMessage('system', f"🔄 执行子任务 {subtask_index+1}/{total_subtasks}: \"{subtask}\"")
+            
+            elif log_type == "subtask_complete":
+                # 子任务完成
+                response = log_data.get("response", "")
+                self.chat_interface.addMessage('assistant', f"✅ {message}\n\n{response}")
+            
+            elif log_type == "subtask_incomplete" or log_type == "subtask_retry":
+                # 子任务未完成或重试
+                self.chat_interface.addMessage('system', message)
+            
+            elif log_type == "aggregation_start":
+                # 聚合开始
+                self.chat_interface.addMessage('system', message)
+            
+            elif log_type == "step_error" or log_type == "subtask_max_retries":
+                # 错误或达到最大重试次数
+                self.chat_interface.addMessage('system', f"❌ {message}")
+            
+            elif log_type == "log" and message.strip():
+                # 普通日志消息
+                self.chat_interface.addMessage('system', message)
     
-    # Enable CORS
-    CORS(app)
+    # 临时替换ws_handler
+    self.reasoning.ws_handler = enhanced_ws_handler
     
-    # Initialize SocketIO
-    socketio = SocketIO(app, cors_allowed_origins="*")
-    app.config['socketio'] = socketio
-    
-    # Load configuration
-    if test_config is None:
-        # Load the instance config, if it exists, when not testing
-        app.config.from_pyfile('config.py', silent=True)
-    else:
-        # Load the test config if passed in
-        app.config.from_mapping(test_config)
-    
-    # Ensure the instance folder exists
     try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
-    
-    # Register API routes
-    from llm_research.webui.api import register_routes
-    register_routes(app)
-    
-    # Serve the main page
-    @app.route('/')
-    def index():
-        """Serve the main page."""
-        return send_from_directory(app.static_folder, 'index.html')
-    
-    return app, socketio
-
-def run_server(host='127.0.0.1', port=5000, debug=False):
-    """
-    Run the Flask server.
-    
-    Args:
-        host: The host to bind to
-        port: The port to bind to
-        debug: Whether to enable debug mode
-    """
-    app, socketio = create_app()
-    socketio.run(app, host=host, port=port, debug=debug)
-
-if __name__ == '__main__':
-    run_server(debug=True)
+        # 执行任务
+        result = self.reasoning.solve_task(
+            task=task,
+            context=context,
+            max_tokens=max_tokens,
+            temperature=temperature or self.temperature,
+            max_retries=max_retries
+        )
+        
+        # 将最终结果添加到聊天
+        if self.chat_interface:
+            self.chat_interface.addMessage('assistant', f"✨ 最终结果:\n\n{result}")
+        
+        return result
+    finally:
+        # 恢复原始ws_handler
+        self.reasoning.ws_handler = original_ws_handler
 ```
 
-### 2. Design API Endpoints
+### 3. 更新API和前端代码
 
-We'll need the following API endpoints:
-
-#### api.py
+#### 3.1 修改API端点 (llm_research/webui/api.py)
 
 ```python
-"""
-API endpoints for the LLMResearch WebUI.
-"""
+# 获取会话ID（如果提供）
+conversation_id = data.get('conversation_id')
 
-import os
-import json
-import uuid
-from flask import request, jsonify, current_app
-from werkzeug.utils import secure_filename
+# 获取聊天界面（如果存在）
+chat_interface = None
+if conversation_id and conversation_id in conversations:
+    chat_interface = conversations[conversation_id]
 
-from llm_research.config import Config
-from llm_research.llm import get_llm_provider
-from llm_research.webui.adapters.conversation import ConversationAdapter
-from llm_research.webui.adapters.reasoning import ReasoningAdapter
-from llm_research.webui.adapters.file_handler import FileHandlerAdapter
-
-# Initialize adapters
-config = Config()
-file_handler = FileHandlerAdapter()
-
-# Store active conversations
-conversations = {}
-
-def register_routes(app):
-    """
-    Register API routes with the Flask application.
-    
-    Args:
-        app: The Flask application
-    """
-    # Chat API
-    @app.route('/api/chat', methods=['POST'])
-    def chat():
-        """
-        Handle chat messages and generate responses.
-        """
-        data = request.json
-        
-        # Get or create conversation
-        conversation_id = data.get('conversation_id')
-        if not conversation_id or conversation_id not in conversations:
-            conversation_id = str(uuid.uuid4())
-            provider_name = data.get('provider')
-            llm = get_llm_provider(config, provider_name)
-            conversations[conversation_id] = ConversationAdapter(llm)
-        
-        conversation = conversations[conversation_id]
-        
-        # Add context from files if provided
-        context_files = data.get('context_files', [])
-        for file_path in context_files:
-            if os.path.exists(file_path):
-                content = file_handler.read_file(file_path)
-                conversation.add_context(content)
-        
-        # Add the user message
-        user_message = data.get('message', '')
-        conversation.add_message('user', user_message)
-        
-        # Generate the response
-        socketio = current_app.config['socketio']
-        
-        def stream_response():
-            for chunk in conversation.generate_response_stream():
-                socketio.emit('response_chunk', {
-                    'conversation_id': conversation_id,
-                    'chunk': chunk
-                })
-        
-        # Start streaming in a background thread
-        socketio.start_background_task(stream_response)
-        
-        return jsonify({
-            'conversation_id': conversation_id,
-            'status': 'streaming'
-        })
-    
-    # Reasoning API
-    @app.route('/api/reasoning', methods=['POST'])
-    def reasoning():
-        """
-        Perform multi-step reasoning on a task.
-        """
-        data = request.json
-        
-        # Get task and parameters
-        task = data.get('task', '')
-        steps = data.get('steps', 5)
-        provider_name = data.get('provider')
-        
-        # Get LLM provider
-        llm = get_llm_provider(config, provider_name)
-        
-        # Create reasoning adapter
-        reasoning = ReasoningAdapter(llm, max_steps=steps)
-        
-        # Add context from files if provided
-        context = ""
-        context_files = data.get('context_files', [])
-        for file_path in context_files:
-            if os.path.exists(file_path):
-                content = file_handler.read_file(file_path)
-                context += f"\n\n--- {os.path.basename(file_path)} ---\n\n{content}"
-        
-        # Execute the task
-        socketio = current_app.config['socketio']
-        
-        def execute_task():
-            # Emit events for each step
-            socketio.emit('reasoning_start', {
-                'task': task,
-                'max_steps': steps
-            })
-            
-            # Decompose the task
-            subtasks = reasoning.task_decomposition(task, context)
-            
-            socketio.emit('reasoning_subtasks', {
-                'subtasks': subtasks
-            })
-            
-            # Execute subtasks
-            results = []
-            for i, subtask in enumerate(subtasks):
-                socketio.emit('reasoning_subtask_start', {
-                    'index': i,
-                    'subtask': subtask
-                })
-                
-                result = reasoning.execute_step(subtask, context)
-                results.append(result)
-                
-                socketio.emit('reasoning_subtask_complete', {
-                    'index': i,
-                    'result': result
-                })
-            
-            # Aggregate results
-            socketio.emit('reasoning_aggregating', {})
-            final_result = reasoning.aggregate_results(task, subtasks, results)
-            
-            socketio.emit('reasoning_complete', {
-                'result': final_result
-            })
-        
-        # Start reasoning in a background thread
-        socketio.start_background_task(execute_task)
-        
-        return jsonify({
-            'status': 'processing'
-        })
-    
-    # Providers API
-    @app.route('/api/providers', methods=['GET'])
-    def list_providers():
-        """
-        List all configured LLM providers.
-        """
-        providers = config.list_providers()
-        default_provider = config.config.get('default_provider')
-        
-        return jsonify({
-            'providers': providers,
-            'default_provider': default_provider
-        })
-    
-    # File upload API
-    @app.route('/api/files', methods=['POST'])
-    def upload_file():
-        """
-        Upload a file for context.
-        """
-        if 'file' not in request.files:
-            return jsonify({
-                'error': 'No file part'
-            }), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({
-                'error': 'No selected file'
-            }), 400
-        
-        if file:
-            filename = secure_filename(file.filename)
-            upload_folder = os.path.join(current_app.instance_path, 'uploads')
-            
-            # Ensure the upload folder exists
-            os.makedirs(upload_folder, exist_ok=True)
-            
-            file_path = os.path.join(upload_folder, filename)
-            file.save(file_path)
-            
-            return jsonify({
-                'filename': filename,
-                'path': file_path
-            })
-    
-    # Settings API
-    @app.route('/api/settings', methods=['GET'])
-    def get_settings():
-        """
-        Get WebUI settings.
-        """
-        # Load settings from config
-        settings = {
-            'theme': 'light',
-            'max_history': 100,
-            'web_search_enabled': True,
-            'extract_url_content': True
-        }
-        
-        return jsonify(settings)
-    
-    @app.route('/api/settings', methods=['POST'])
-    def update_settings():
-        """
-        Update WebUI settings.
-        """
-        data = request.json
-        
-        # Update settings in config
-        # ...
-        
-        return jsonify({
-            'status': 'success'
-        })
+# 创建推理适配器，传递聊天界面
+reasoning = ReasoningAdapter(
+    llm,
+    max_steps=steps,
+    web_search_enabled=web_search_enabled,
+    extract_url_content=extract_url_content,
+    ws_handler=send_log_to_client,
+    chat_interface=chat_interface  # 传递聊天界面
+)
 ```
 
-### 3. Create Frontend Interface
-
-The frontend will be a responsive web application with a chat interface.
-
-#### index.html
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLMResearch WebUI</title>
-    <link rel="stylesheet" href="css/main.css">
-    <link rel="stylesheet" href="css/themes.css">
-    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
-</head>
-<body class="theme-light">
-    <div class="app-container">
-        <header class="app-header">
-            <h1>LLMResearch</h1>
-            <div class="header-controls">
-                <button id="settings-toggle" class="icon-button" title="Settings">
-                    <span class="icon">⚙️</span>
-                </button>
-                <button id="theme-toggle" class="icon-button" title="Toggle Theme">
-                    <span class="icon">🌓</span>
-                </button>
-            </div>
-        </header>
-        
-        <main class="app-main">
-            <div class="chat-container">
-                <div class="chat-messages" id="chat-messages">
-                    <!-- Messages will be dynamically added here -->
-                    <div class="message system">
-                        <div class="message-content">
-                            Welcome to LLMResearch WebUI. How can I help you today?
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="chat-input">
-                    <textarea id="user-input" placeholder="Type your message..."></textarea>
-                    <div class="input-controls">
-                        <button id="file-button" class="icon-button" title="Upload File">
-                            <span class="icon">📎</span>
-                        </button>
-                        <button id="send-button">Send</button>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="settings-panel" id="settings-panel">
-                <h3>Settings</h3>
-                
-                <div class="setting-group">
-                    <label for="provider-select">LLM Provider:</label>
-                    <select id="provider-select">
-                        <option value="openai">OpenAI</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                </div>
-                
-                <div class="setting-group">
-                    <label for="web-search-toggle">Web Search:</label>
-                    <input type="checkbox" id="web-search-toggle" checked>
-                </div>
-                
-                <div class="setting-group">
-                    <label for="extract-url-toggle">Extract URL Content:</label>
-                    <input type="checkbox" id="extract-url-toggle" checked>
-                </div>
-                
-                <div class="setting-group">
-                    <label for="reasoning-steps">Reasoning Steps:</label>
-                    <input type="number" id="reasoning-steps" min="1" max="10" value="5">
-                </div>
-                
-                <div class="setting-group">
-                    <label for="temperature">Temperature:</label>
-                    <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7">
-                    <span id="temperature-value">0.7</span>
-                </div>
-                
-                <div class="setting-group">
-                    <button id="clear-history">Clear Chat History</button>
-                </div>
-            </div>
-        </main>
-        
-        <div class="file-upload-modal" id="file-upload-modal">
-            <div class="modal-content">
-                <h3>Upload File</h3>
-                <form id="file-upload-form">
-                    <input type="file" id="file-input">
-                    <div class="modal-buttons">
-                        <button type="button" id="cancel-upload">Cancel</button>
-                        <button type="submit">Upload</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <script src="js/api.js"></script>
-    <script src="js/chat.js"></script>
-    <script src="js/settings.js"></script>
-    <script src="js/app.js"></script>
-</body>
-</html>
-```
-
-#### main.css
-
-```css
-/* Base styles */
-:root {
-    --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    --border-radius: 8px;
-    --transition-speed: 0.3s;
-}
-
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-body {
-    font-family: var(--font-family);
-    line-height: 1.6;
-    transition: background-color var(--transition-speed), color var(--transition-speed);
-}
-
-.app-container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
-/* Header */
-.app-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.header-controls {
-    display: flex;
-    gap: 0.5rem;
-}
-
-/* Main content */
-.app-main {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-}
-
-/* Chat container */
-.chat-container {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    overflow: hidden;
-}
-
-.chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1rem;
-}
-
-.message {
-    margin-bottom: 1rem;
-    max-width: 80%;
-}
-
-.message.user {
-    margin-left: auto;
-}
-
-.message.assistant {
-    margin-right: auto;
-}
-
-.message.system {
-    margin: 1rem auto;
-    max-width: 90%;
-    text-align: center;
-    opacity: 0.8;
-}
-
-.message-content {
-    padding: 0.75rem 1rem;
-    border-radius: var(--border-radius);
-}
-
-/* Chat input */
-.chat-input {
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-    border-top: 1px solid var(--border-color);
-}
-
-#user-input {
-    width: 100%;
-    min-height: 60px;
-    max-height: 200px;
-    padding: 0.75rem;
-    border-radius: var(--border-radius);
-    resize: vertical;
-    font-family: var(--font-family);
-    border: 1px solid var(--border-color);
-    background-color: var(--input-bg-color);
-    color: var(--text-color);
-}
-
-.input-controls {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 0.5rem;
-}
-
-#send-button {
-    padding: 0.5rem 1.5rem;
-    border-radius: var(--border-radius);
-    border: none;
-    background-color: var(--primary-color);
-    color: white;
-    cursor: pointer;
-    transition: background-color var(--transition-speed);
-}
-
-#send-button:hover {
-    background-color: var(--primary-color-hover);
-}
-
-/* Settings panel */
-.settings-panel {
-    width: 300px;
-    padding: 1rem;
-    border-left: 1px solid var(--border-color);
-    overflow-y: auto;
-    transform: translateX(100%);
-    transition: transform var(--transition-speed);
-}
-
-.settings-panel.active {
-    transform: translateX(0);
-}
-
-.setting-group {
-    margin-bottom: 1.5rem;
-}
-
-.setting-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-}
-
-/* File upload modal */
-.file-upload-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-speed);
-}
-
-.file-upload-modal.active {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.modal-content {
-    background-color: var(--bg-color);
-    padding: 2rem;
-    border-radius: var(--border-radius);
-    width: 90%;
-    max-width: 500px;
-}
-
-.modal-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
-    margin-top: 1.5rem;
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-    .app-main {
-        flex-direction: column;
-    }
-    
-    .settings-panel {
-        width: 100%;
-        border-left: none;
-        border-top: 1px solid var(--border-color);
-        transform: translateY(100%);
-    }
-    
-    .settings-panel.active {
-        transform: translateY(0);
-    }
-    
-    .message {
-        max-width: 90%;
-    }
-}
-```
-
-#### app.js
+#### 3.2 更新前端API客户端 (llm_research/webui/static/js/api.js)
 
 ```javascript
-// Main application logic
-
-// Initialize Socket.IO connection
-const socket = io();
-
-// Initialize API client
-const api = new ApiClient();
-
-// Initialize chat interface
-const chat = new ChatInterface(
-    document.getElementById('chat-messages'),
-    document.getElementById('user-input'),
-    document.getElementById('send-button')
-);
-
-// Initialize settings panel
-const settings = new SettingsPanel(
-    document.getElementById('settings-panel'),
-    document.getElementById('settings-toggle'),
-    document.getElementById('theme-toggle'),
-    document.getElementById('provider-select'),
-    document.getElementById('web-search-toggle'),
-    document.getElementById('extract-url-toggle'),
-    document.getElementById('reasoning-steps'),
-    document.getElementById('temperature'),
-    document.getElementById('temperature-value'),
-    document.getElementById('clear-history')
-);
-
-// Initialize file upload modal
-const fileUploadModal = document.getElementById('file-upload-modal');
-const fileUploadForm = document.getElementById('file-upload-form');
-const fileInput = document.getElementById('file-input');
-const fileButton = document.getElementById('file-button');
-const cancelUploadButton = document.getElementById('cancel-upload');
-
-// Event listeners
-document.addEventListener('DOMContentLoaded', async () => {
-    // Load settings
-    const appSettings = await api.getSettings();
-    settings.updateSettings(appSettings);
-    
-    // Load providers
-    const providers = await api.getProviders();
-    settings.updateProviders(providers);
-    
-    // Set up Socket.IO event listeners
-    setupSocketListeners();
-});
-
-// Set up chat event listeners
-chat.onSendMessage(async (message) => {
-    // Add user message to chat
-    chat.addMessage('user', message);
-    
-    // Disable input while processing
-    chat.setInputEnabled(false);
-    
+// 在startReasoning方法中传递当前会话ID
+async startReasoning(task, options = {}) {
     try {
-        // Get current settings
-        const currentSettings = settings.getCurrentSettings();
-        
-        // Send message to API
-        const response = await api.sendMessage(message, {
-            provider: currentSettings.provider,
-            web_search: currentSettings.web_search_enabled,
-            extract_url: currentSettings.extract_url_content,
-            temperature: currentSettings.temperature
+        const response = await fetch(`${this.baseUrl}/api/reasoning`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                task: task,
+                steps: options.steps || 5,
+                provider: options.provider,
+                temperature: options.temperature,
+                max_tokens: options.max_tokens,
+                web_search: options.web_search,
+                extract_url: options.extract_url,
+                retries: options.retries || 3,
+                context_files: options.context_files || [],
+                conversation_id: this.activeConversationId  // 传递当前会话ID
+            })
         });
         
-        // Create assistant message placeholder
-        chat.addMessage('assistant', '', response.conversation_id);
+        // ...
     } catch (error) {
-        console.error('Error sending message:', error);
-        chat.addMessage('system', 'Error: Failed to send message. Please try again.');
-        chat.setInputEnabled(true);
+        // ...
     }
-});
-
-// Set up file upload event listeners
-fileButton.addEventListener('click', () => {
-    fileUploadModal.classList.add('active');
-});
-
-cancelUploadButton.addEventListener('click', () => {
-    fileUploadModal.classList.remove('active');
-});
-
-fileUploadForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    
-    if (!fileInput.files.length) {
-        return;
-    }
-    
-    const file = fileInput.files[0];
-    
-    try {
-        const result = await api.uploadFile(file);
-        fileUploadModal.classList.remove('active');
-        
-        // Add system message about the file
-        chat.addMessage('system', `File uploaded: ${file.name}`);
-        
-        // Store the file path for context
-        chat.addContextFile(result.path);
-    } catch (error) {
-        console.error('Error uploading file:', error);
-        chat.addMessage('system', 'Error: Failed to upload file. Please try again.');
-    }
-});
-
-// Set up Socket.IO event listeners
-function setupSocketListeners() {
-    // Chat response streaming
-    socket.on('response_chunk', (data) => {
-        chat.appendToMessage('assistant', data.chunk, data.conversation_id);
-    });
-    
-    socket.on('response_complete', (data) => {
-        chat.setInputEnabled(true);
-    });
-    
-    // Reasoning events
-    socket.on('reasoning_start', (data) => {
-        chat.addMessage('system', `Starting multi-step reasoning: "${data.task}"`);
-    });
-    
-    socket.on('reasoning_subtasks', (data) => {
-        let subtasksMessage = 'Breaking down into subtasks:\n';
-        data.subtasks.forEach((subtask, index) => {
-            subtasksMessage += `${index + 1}. ${subtask}\n`;
-        });
-        
-        chat.addMessage('system', subtasksMessage);
-    });
-    
-    socket.on('reasoning_subtask_start', (data) => {
-        chat.addMessage('system', `Working on subtask ${data.index + 1}: "${data.subtask}"`);
-    });
-    
-    socket.on('reasoning_subtask_complete', (data) => {
-        chat.addMessage('assistant', data.result);
-    });
-    
-    socket.on('reasoning_aggregating', () => {
-        chat.addMessage('system', 'Aggregating results...');
-    });
-    
-    socket.on('reasoning_complete', (data) => {
-        chat.addMessage('assistant', data.result);
-        chat.setInputEnabled(true);
-    });
 }
 ```
 
-### 4. Integration with CLI
+#### 3.3 实现前端日志处理 (llm_research/webui/static/js/reasoning.js)
 
-We'll update the CLI to add a command for launching the WebUI:
-
-```python
-@cli.command()
-@click.option("--host", default="127.0.0.1", help="The host to bind to")
-@click.option("--port", default=5000, help="The port to bind to")
-@click.option("--debug/--no-debug", default=False, help="Enable debug mode")
-def webui(host, port, debug):
-    """
-    Launch the web user interface.
-    """
-    from llm_research.webui.server import run_server
-    
-    click.echo(f"Starting WebUI server at http://{host}:{port}")
-    run_server(host=host, port=port, debug=debug)
+```javascript
+/**
+ * 处理推理日志事件
+ *
+ * @param {Object} data - 事件数据
+ */
+handleReasoningLog(data) {
+    // 处理结构化日志消息
+    if (typeof data === 'object' && data.type) {
+        // enhanced_ws_handler会处理在聊天历史中显示这些消息
+        // 我们只需要根据日志类型更新UI
+        
+        const message = data.message || '';
+        
+        // 根据日志类型更新进度条和状态
+        switch (data.type) {
+            case 'decomposition_start':
+                this.reasoningStatus.textContent = '分析任务中...';
+                this.reasoningProgressBar.style.width = '10%';
+                break;
+                
+            case 'decomposition_complete':
+                this.reasoningStatus.textContent = '任务分解完成';
+                this.reasoningProgressBar.style.width = '20%';
+                
+                // 如果有子任务，更新子任务
+                if (data.subtasks && Array.isArray(data.subtasks)) {
+                    this.subtasks = data.subtasks;
+                    this.currentSubtaskIndex = 0;
+                }
+                break;
+                
+            case 'subtask_start':
+                if (data.subtask_index !== undefined && data.total_subtasks) {
+                    const progress = 20 + (data.subtask_index / data.total_subtasks) * 60;
+                    this.reasoningProgressBar.style.width = `${progress}%`;
+                    this.reasoningStatus.textContent = `执行子任务 ${data.subtask_index + 1}/${data.total_subtasks}`;
+                }
+                break;
+                
+            case 'subtask_complete':
+                if (data.subtask_index !== undefined && data.total_subtasks) {
+                    const progress = 20 + ((data.subtask_index + 1) / data.total_subtasks) * 60;
+                    this.reasoningProgressBar.style.width = `${progress}%`;
+                    this.reasoningStatus.textContent = `子任务 ${data.subtask_index + 1}/${data.total_subtasks} 完成`;
+                }
+                break;
+                
+            case 'aggregation_start':
+                this.reasoningProgressBar.style.width = '80%';
+                this.reasoningStatus.textContent = '整合结果中...';
+                break;
+                
+            case 'aggregation_complete':
+                this.reasoningProgressBar.style.width = '100%';
+                this.reasoningStatus.textContent = '推理完成';
+                break;
+        }
+    } 
+    // 处理简单字符串日志消息（旧格式）
+    else if (typeof data === 'string' || data.message) {
+        const message = typeof data === 'string' ? data : data.message;
+        // 只添加非空消息，避免聊天历史混乱
+        if (message && message.trim()) {
+            this.chatInterface.addMessage('system', message);
+        }
+    }
+}
 ```
 
-### 5. Adapter Classes
+## 测试计划
 
-We'll create adapter classes to interface with the existing LLMResearch functionality:
+1. **基本功能测试**
+   - 测试简单推理任务，确保所有中间步骤正确显示
+   - 验证任务分解、子任务执行和结果聚合的事件是否正确显示
 
-#### adapters/conversation.py
+2. **复杂场景测试**
+   - 测试包含多个子任务的复杂推理任务
+   - 测试需要重试的场景，确保重试事件正确显示
+   - 测试达到最大重试次数的场景
 
-```python
-"""
-Adapter for conversation functionality.
-"""
+3. **错误处理测试**
+   - 测试推理过程中的错误处理
+   - 验证错误消息是否正确显示在聊天历史中
 
-from typing import List, Dict, Any, Optional, Iterator
+4. **集成测试**
+   - 测试与现有聊天功能的集成
+   - 确保推理功能不影响其他功能的正常工作
 
-from llm_research.llm.base import BaseLLM
-from llm_research.conversation import Conversation as LLMConversation
+## 部署计划
 
-class ConversationAdapter:
-    """
-    Adapter for the LLMResearch conversation functionality.
-    """
-    
-    def __init__(self, llm: BaseLLM):
-        """
-        Initialize the conversation adapter.
-        
-        Args:
-            llm: The LLM provider to use
-        """
-        self.conversation = LLMConversation(llm)
-    
-    def add_context(self, context: str) -> None:
-        """
-        Add context to the conversation.
-        
-        Args:
-            context: The context to add
-        """
-        self.conversation.add_context(context)
-    
-    def add_message(self, role: str, content: str) -> None:
-        """
-        Add a message to the conversation.
-        
-        Args:
-            role: The role of the message sender
-            content: The message content
-        """
-        self.conversation.add_message(role, content)
-    
-    def generate_response(self, **kwargs) -> str:
-        """
-        Generate a response from the LLM.
-        
-        Args:
-            **kwargs: Additional parameters for the LLM
-            
-        Returns:
-            The generated response
-        """
-        return self.conversation.generate_response(**kwargs)
-    
-    def generate_response_stream(self, **kwargs) -> Iterator[str]:
-        """
-        Generate a streaming response from the LLM.
-        
-        Args:
-            **kwargs: Additional parameters for the LLM
-            
-        Returns:
-            An iterator yielding response chunks
-        """
-        return self.conversation.generate_response_stream(**kwargs)
-```
-
-## Required Dependencies
-
-### Backend
-- Flask
-- Flask-CORS
-- Flask-SocketIO
-- Werkzeug
-- Existing LLMResearch dependencies
-
-### Frontend
-- HTML5/CSS3
-- JavaScript (ES6+)
-- Socket.IO client
-
-## Implementation Timeline
-
-1. **Phase 1: Basic Setup** (1-2 days)
-   - Create project structure
-   - Set up Flask server
-   - Implement basic HTML/CSS layout
-
-2. **Phase 2: Core Functionality** (2-3 days)
-   - Implement chat API endpoint
-   - Create basic chat UI
-   - Connect frontend to backend
-
-3. **Phase 3: Advanced Features** (3-4 days)
-   - Implement reasoning visualization
-   - Add file upload functionality
-   - Integrate web search features
-
-4. **Phase 4: Polish and Testing** (1-2 days)
-   - Improve UI/UX
-   - Add responsive design
-   - Test across different browsers and devices
-
-## Next Steps
-
-1. Create the basic project structure
-2. Implement the Flask server with core API endpoints
-3. Develop the frontend chat interface
-4. Integrate with existing LLMResearch functionality
-5. Test and refine the user experience
+1. 在开发环境中实现并测试所有更改
+2. 进行代码审查，确保代码质量和一致性
+3. 在测试环境中部署并进行全面测试
+4. 修复发现的任何问题
+5. 部署到生产环境
+6. 监控系统性能和用户反馈
+7. 根据反馈进行必要的调整和优化

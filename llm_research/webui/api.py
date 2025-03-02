@@ -73,34 +73,62 @@ def register_routes(app):
         # Generate the response
         socketio = current_app.config['socketio']
         
-        def stream_response():
-            try:
-                # Get response parameters
-                temperature = data.get('temperature', 0.7)
-                max_tokens = data.get('max_tokens')
-                
-                # Stream the response
-                full_response = ""
-                for chunk in conversation.generate_response_stream(
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                ):
-                    full_response += chunk
-                    socketio.emit('response_chunk', {
+        def create_stream_with_context(app, conversation_id, data, conversation):
+            """Helper function to create response stream with proper application context"""
+            with app.app_context():
+                try:
+                    # Get socketio from app config
+                    socketio = app.config['socketio']
+                    
+                    # Get response parameters
+                    temperature = data.get('temperature', 0.7)
+                    max_tokens = data.get('max_tokens')
+                    
+                    # Stream the response
+                    full_response = ""
+                    for chunk in conversation.generate_response_stream(
+                        temperature=temperature,
+                        max_tokens=max_tokens
+                    ):
+                        full_response += chunk
+                        socketio.emit('response_chunk', {
+                            'conversation_id': conversation_id,
+                            'chunk': chunk
+                        })
+                    
+                    # Signal completion
+                    socketio.emit('response_complete', {
                         'conversation_id': conversation_id,
-                        'chunk': chunk
+                        'response': full_response
                     })
-                
-                # Signal completion
-                socketio.emit('response_complete', {
-                    'conversation_id': conversation_id,
-                    'response': full_response
-                })
-            except Exception as e:
-                socketio.emit('response_error', {
-                    'conversation_id': conversation_id,
-                    'error': str(e)
-                })
+                    return True
+                except Exception as e:
+                    # Log the error
+                    import traceback
+                    print(f"Error in stream_response: {str(e)}")
+                    print(traceback.format_exc())
+                    
+                    # Get socketio from app config
+                    socketio = app.config['socketio']
+                    
+                    # Emit error event
+                    socketio.emit('response_error', {
+                        'conversation_id': conversation_id,
+                        'error': str(e)
+                    })
+                    return False
+
+        # Get the app reference before starting the background task
+        app = current_app._get_current_object()
+        
+        # Start the background task with the app reference
+        socketio.start_background_task(
+            create_stream_with_context,
+            app,
+            conversation_id,
+            data,
+            conversation
+        )
         
         # Start streaming in a background thread
         socketio.start_background_task(stream_response)
@@ -124,9 +152,15 @@ def register_routes(app):
         provider_name = data.get('provider')
         web_search_enabled = data.get('web_search', True)
         extract_url_content = data.get('extract_url', True)
+        conversation_id = data.get('conversation_id')  # Get conversation ID if provided
         
         # Create a session ID
         session_id = str(uuid.uuid4())
+        
+        # Get the conversation if provided
+        chat_interface = None
+        if conversation_id and conversation_id in conversations:
+            chat_interface = conversations[conversation_id]
         
         # Get LLM provider
         try:
@@ -137,12 +171,22 @@ def register_routes(app):
             # Get the WebSocket logging handler
             from llm_research.webui.utils import send_log_to_client
             
+            # Create a wrapper for the WebSocket handler that ensures we have an application context
+            def ws_handler_with_context(log_data):
+                # Store app reference to avoid context issues
+                app = current_app._get_current_object()
+                
+                # Use the app's context to ensure we're within an application context
+                with app.app_context():
+                    send_log_to_client(log_data)
+            
             reasoning = ReasoningAdapter(
                 llm,
                 max_steps=steps,
                 web_search_enabled=web_search_enabled,
                 extract_url_content=extract_url_content,
-                ws_handler=send_log_to_client
+                ws_handler=ws_handler_with_context,  # Use the wrapper with context
+                chat_interface=chat_interface  # Pass the chat interface
             )
             reasoning_sessions[session_id] = reasoning
         except Exception as e:
@@ -166,45 +210,70 @@ def register_routes(app):
         # Execute the task
         socketio = current_app.config['socketio']
         
-        def execute_task():
-            try:
-                # Emit events for each step
-                socketio.emit('reasoning_start', {
-                    'session_id': session_id,
-                    'task': task,
-                    'max_steps': steps
-                })
-                
-                # Execute the reasoning process
-                result = reasoning.solve_task(
-                    task=task,
-                    context=context if context else None,
-                    temperature=data.get('temperature', 0.7),
-                    max_tokens=data.get('max_tokens'),
-                    max_retries=data.get('retries', 3)
-                )
-                
-                # Emit completion event
-                socketio.emit('reasoning_complete', {
-                    'session_id': session_id,
-                    'result': result
-                })
-                
-                # Clean up
-                if session_id in reasoning_sessions:
-                    del reasoning_sessions[session_id]
-            except Exception as e:
-                socketio.emit('reasoning_error', {
-                    'session_id': session_id,
-                    'error': str(e)
-                })
-                
-                # Clean up
-                if session_id in reasoning_sessions:
-                    del reasoning_sessions[session_id]
+        def create_task_with_context(app, session_id, task, steps, context, data, reasoning):
+            """Helper function to create task with proper application context"""
+            with app.app_context():
+                try:
+                    # Get socketio from app config
+                    socketio = app.config['socketio']
+                    
+                    # Emit events for each step
+                    socketio.emit('reasoning_start', {
+                        'session_id': session_id,
+                        'task': task,
+                        'max_steps': steps
+                    })
+                    
+                    # Execute the reasoning process
+                    result = reasoning.solve_task(
+                        task=task,
+                        context=context if context else None,
+                        temperature=data.get('temperature', 0.7),
+                        max_tokens=data.get('max_tokens'),
+                        max_retries=data.get('retries', 3)
+                    )
+                    
+                    # Emit completion event
+                    socketio.emit('reasoning_complete', {
+                        'session_id': session_id,
+                        'result': result
+                    })
+                    
+                    return True
+                except Exception as e:
+                    # Log the error
+                    import traceback
+                    print(f"Error in execute_task: {str(e)}")
+                    print(traceback.format_exc())
+                    
+                    # Get socketio from app config
+                    socketio = app.config['socketio']
+                    
+                    # Emit error event
+                    socketio.emit('reasoning_error', {
+                        'session_id': session_id,
+                        'error': str(e)
+                    })
+                    return False
+                finally:
+                    # Clean up regardless of success/failure
+                    if session_id in reasoning_sessions:
+                        del reasoning_sessions[session_id]
+
+        # Get the app reference before starting the background task
+        app = current_app._get_current_object()
         
-        # Start reasoning in a background thread
-        socketio.start_background_task(execute_task)
+        # Start the background task with the app reference
+        socketio.start_background_task(
+            create_task_with_context,
+            app,
+            session_id,
+            task,
+            steps,
+            context,
+            data,
+            reasoning
+        )
         
         return jsonify({
             'session_id': session_id,

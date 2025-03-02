@@ -63,14 +63,20 @@ class Reasoning:
         self.ws_handler = ws_handler
         self.timeout = timeout
 
-    def _log(self, message: str) -> None:
+    def _log(self, message: Union[str, Dict[str, Any]]) -> None:
         """Send log message to UI if ws_handler is available"""
         if self.ws_handler:
-            self.ws_handler({
-                "type": "log",
-                "message": message,
-                "timestamp": time.time()
-            })
+            if isinstance(message, str):
+                self.ws_handler({
+                    "type": "log",
+                    "message": message,
+                    "timestamp": time.time()
+                })
+            else:
+                # If it's already a dictionary, ensure it has a timestamp
+                if "timestamp" not in message:
+                    message["timestamp"] = time.time()
+                self.ws_handler(message)
     
     def add_step(self, prompt: str, response: str = "", metadata: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -138,12 +144,17 @@ class Reasoning:
         # Show thinking indicator
         step_num = len(self.steps) + 1
         print(f"💭 步骤 {step_num}: 模型思考中... (timeout: {timeout}s)")
+        
+        # Send step start event
+        self._log({
+            "type": "step_start",
+            "step_num": step_num,
+            "message": f"💭 步骤 {step_num}: 模型思考中... (timeout: {timeout}s)",
+            "prompt": prompt
+        })
+        
         # Use the provided temperature or the default
         temp = temperature if temperature is not None else self.temperature
-        
-        # Show thinking indicator
-        step_num = len(self.steps) + 1
-        print(f"💭 步骤 {step_num}: 模型思考中...")
         
         try:
             # Generate the response with timeout
@@ -160,13 +171,23 @@ class Reasoning:
         except TimeoutError:
             error_msg = f"❌ 步骤 {step_num} 超时 (超过 {timeout} 秒)"
             print(error_msg)
-            self._log(error_msg)
+            self._log({
+                "type": "step_error",
+                "step_num": step_num,
+                "message": error_msg,
+                "error": "timeout"
+            })
             raise TimeoutError(error_msg)
             
         except Exception as e:
             error_msg = f"❌ 步骤 {step_num} 出错: {str(e)}"
             print(error_msg)
-            self._log(error_msg)
+            self._log({
+                "type": "step_error",
+                "step_num": step_num,
+                "message": error_msg,
+                "error": str(e)
+            })
             raise
         
         # Check if the response contains a search request
@@ -306,6 +327,14 @@ class Reasoning:
         # Add the step
         self.add_step(prompt, response_text)
         
+        # Send step complete event
+        self._log({
+            "type": "step_complete",
+            "step_num": step_num,
+            "message": f"✅ 步骤 {step_num} 完成",
+            "response": response_text
+        })
+        
         return response_text
     
     def chain_of_thought(
@@ -385,6 +414,13 @@ class Reasoning:
         print(f"\n🔍 分析任务: \"{task}\"")
         print("正在将任务分解为子任务...\n")
         
+        # Send task decomposition start event
+        self._log({
+            "type": "decomposition_start",
+            "message": f"🔍 分析任务: \"{task}\"\n正在将任务分解为子任务...",
+            "task": task
+        })
+        
         max_retries = 2
         retry_count = 0
         
@@ -430,12 +466,28 @@ class Reasoning:
             retry_count += 1
             print(f"\n⚠️ 生成的子任务数量 ({len(subtasks)}) 远超最大步骤数 ({self.max_steps})")
             print(f"正在重新分解任务 (尝试 {retry_count}/{max_retries})...\n")
+            
+            # Send retry event
+            self._log({
+                "type": "decomposition_retry",
+                "message": f"⚠️ 生成的子任务数量 ({len(subtasks)}) 远超最大步骤数 ({self.max_steps})\n正在重新分解任务 (尝试 {retry_count}/{max_retries})...",
+                "retry_count": retry_count,
+                "max_retries": max_retries
+            })
         
         # Display the subtasks
         print("\n📋 已将任务分解为以下子任务:")
         for i, subtask in enumerate(subtasks):
             print(f"  {i+1}. {subtask}")
         print()
+        
+        # Send decomposition complete event
+        subtasks_formatted = "\n".join([f"{i+1}. {subtask}" for i, subtask in enumerate(subtasks)])
+        self._log({
+            "type": "decomposition_complete",
+            "message": f"📋 已将任务分解为以下子任务:\n{subtasks_formatted}",
+            "subtasks": subtasks
+        })
         
         return subtasks
     
@@ -466,8 +518,14 @@ class Reasoning:
         total_subtasks = len(subtasks)
         
         for i, subtask in enumerate(subtasks):
-            self._log(f"\n🔄 执行子任务 {i+1}/{total_subtasks}: \"{subtask}\"")
-            self._log("思考中...\n")
+            # Send subtask start event
+            self._log({
+                "type": "subtask_start",
+                "message": f"\n🔄 执行子任务 {i+1}/{total_subtasks}: \"{subtask}\"\n思考中...",
+                "subtask_index": i,
+                "subtask": subtask,
+                "total_subtasks": total_subtasks
+            })
             
             # Track retry attempts
             retry_count = 0
@@ -477,6 +535,15 @@ class Reasoning:
             while not subtask_completed and retry_count <= max_retries:
                 if retry_count > 0:
                     print(f"🔁 重试子任务 {i+1} (尝试 {retry_count}/{max_retries})...")
+                    
+                    # Send retry event
+                    self._log({
+                        "type": "subtask_retry",
+                        "message": f"🔁 重试子任务 {i+1} (尝试 {retry_count}/{max_retries})...",
+                        "subtask_index": i,
+                        "retry_count": retry_count,
+                        "max_retries": max_retries
+                    })
                 
                 # Construct the prompt
                 prompt = f"Subtask {i+1}/{len(subtasks)}: {subtask}\n\n"
@@ -514,6 +581,13 @@ class Reasoning:
                 
                 # Validate if the subtask is completed
                 print("🔍 验证子任务是否完成...")
+                
+                # Send validation start event
+                self._log({
+                    "type": "subtask_validation_start",
+                    "message": f"🔍 验证子任务 {i+1} 是否完成...",
+                    "subtask_index": i
+                })
                 subtask_completed = self._validate_subtask_completion(
                     subtask=subtask,
                     response=response,
@@ -524,13 +598,43 @@ class Reasoning:
                 
                 if subtask_completed:
                     print(f"✅ 子任务 {i+1} 完成")
+                    
+                    # Send subtask complete event
+                    self._log({
+                        "type": "subtask_complete",
+                        "message": f"✅ 子任务 {i+1}/{total_subtasks} 完成",
+                        "subtask_index": i,
+                        "subtask": subtask,
+                        "response": response
+                    })
+                    
                     responses.append(response)
                 else:
                     print(f"❌ 子任务 {i+1} 未完成")
+                    
+                    # Send subtask incomplete event
+                    self._log({
+                        "type": "subtask_incomplete",
+                        "message": f"❌ 子任务 {i+1}/{total_subtasks} 未完成",
+                        "subtask_index": i,
+                        "subtask": subtask,
+                        "response": response
+                    })
+                    
                     retry_count += 1
                     
                     if retry_count > max_retries:
                         print(f"⚠️ 达到最大重试次数 ({max_retries})，使用最后一次结果")
+                        
+                        # Send max retries event
+                        self._log({
+                            "type": "subtask_max_retries",
+                            "message": f"⚠️ 达到最大重试次数 ({max_retries})，使用最后一次结果",
+                            "subtask_index": i,
+                            "subtask": subtask,
+                            "response": response
+                        })
+                        
                         responses.append(response)
                     else:
                         print(f"准备重试子任务 {i+1}...")
@@ -626,6 +730,14 @@ class Reasoning:
         print("\n🧩 整合所有子任务结果")
         print("生成最终答案...\n")
         
+        # Send aggregation start event
+        self._log({
+            "type": "aggregation_start",
+            "message": "🧩 整合所有子任务结果\n生成最终答案...",
+            "task": task,
+            "subtasks_count": len(subtasks)
+        })
+        
         # Construct the prompt
         prompt = f"Original task: {task}\n\n"
         prompt += "Subtasks and results:\n"
@@ -645,6 +757,13 @@ class Reasoning:
         )
         
         print("\n✨ 任务完成!")
+        
+        # Send aggregation complete event
+        self._log({
+            "type": "aggregation_complete",
+            "message": "✨ 任务完成!",
+            "result": aggregation
+        })
         
         return aggregation
     

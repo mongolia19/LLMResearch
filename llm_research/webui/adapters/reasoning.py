@@ -23,7 +23,8 @@ class ReasoningAdapter:
         temperature: float = 0.7,
         web_search_enabled: bool = True,
         extract_url_content: bool = True,
-        ws_handler: Optional[Callable[[str], None]] = None
+        ws_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
+        chat_interface = None  # Add chat_interface parameter
     ):
         """
         Initialize the reasoning adapter.
@@ -35,10 +36,12 @@ class ReasoningAdapter:
             web_search_enabled: Whether to enable web search
             extract_url_content: Whether to extract content from URLs
             ws_handler: WebSocket handler function for sending logs to UI (optional)
+            chat_interface: Chat interface for displaying messages (optional)
         """
         self.llm = llm
         self.max_steps = max_steps
         self.temperature = temperature
+        self.chat_interface = chat_interface  # Store chat_interface reference
         
         # Initialize web search if enabled
         web_search = None
@@ -54,7 +57,8 @@ class ReasoningAdapter:
             max_steps=max_steps,
             temperature=temperature,
             web_search=web_search,
-            extract_url_content=extract_url_content
+            extract_url_content=extract_url_content,
+            ws_handler=ws_handler  # Pass ws_handler to reasoning
         )
         
         # Event handlers
@@ -257,13 +261,109 @@ class ReasoningAdapter:
         Returns:
             The final result
         """
-        return self.reasoning.solve_task(
-            task=task,
-            context=context,
-            max_tokens=max_tokens,
-            temperature=temperature or self.temperature,
-            max_retries=max_retries
-        )
+        # Store chat interface reference to avoid potential issues
+        chat_interface = self.chat_interface
+        
+        # Add custom event handler to display intermediate steps in chat history
+        original_ws_handler = self.reasoning.ws_handler
+        
+        def enhanced_ws_handler(log_data):
+            try:
+                # Call original ws_handler
+                if original_ws_handler:
+                    original_ws_handler(log_data)
+                
+                # Display in chat history if chat_interface is available
+                if chat_interface:
+                    log_type = log_data.get("type")
+                    message = log_data.get("message", "")
+                    
+                    if log_type == "decomposition_start":
+                        # Task decomposition started
+                        chat_interface.addMessage('system', f"🔍 {message}")
+                    
+                    elif log_type == "decomposition_complete":
+                        # Task decomposition completed
+                        chat_interface.addMessage('assistant', f"📋 {message}")
+                    
+                    elif log_type == "subtask_start":
+                        # Subtask started
+                        subtask_index = log_data.get("subtask_index", 0)
+                        total_subtasks = log_data.get("total_subtasks", 1)
+                        subtask = log_data.get("subtask", "")
+                        chat_interface.addMessage('system', f"🔄 执行子任务 {subtask_index+1}/{total_subtasks}: \"{subtask}\"")
+                    
+                    elif log_type == "subtask_complete":
+                        # Subtask completed
+                        response = log_data.get("response", "")
+                        chat_interface.addMessage('assistant', f"✅ {message}\n\n{response}")
+                    
+                    elif log_type == "subtask_incomplete" or log_type == "subtask_retry":
+                        # Subtask incomplete or retry
+                        chat_interface.addMessage('system', message)
+                    
+                    elif log_type == "aggregation_start":
+                        # Aggregation started
+                        chat_interface.addMessage('system', message)
+                    
+                    elif log_type == "aggregation_complete":
+                        # Aggregation completed - final result is handled separately
+                        pass
+                    
+                    elif log_type == "step_start":
+                        # Step started - more detailed than we need in chat history
+                        pass
+                    
+                    elif log_type == "step_complete":
+                        # Step completed - more detailed than we need in chat history
+                        pass
+                    
+                    elif log_type == "step_error" or log_type == "subtask_max_retries":
+                        # Error or max retries reached
+                        chat_interface.addMessage('system', f"❌ {message}")
+                    
+                    elif log_type == "log" and message.strip():
+                        # Regular log message
+                        chat_interface.addMessage('system', message)
+            except Exception as e:
+                # Log any errors that occur during handling
+                import traceback
+                print(f"Error in enhanced_ws_handler: {str(e)}")
+                print(traceback.format_exc())
+        
+        # Temporarily replace ws_handler
+        self.reasoning.ws_handler = enhanced_ws_handler
+        
+        try:
+            # Execute the task
+            result = self.reasoning.solve_task(
+                task=task,
+                context=context,
+                max_tokens=max_tokens,
+                temperature=temperature or self.temperature,
+                max_retries=max_retries
+            )
+            
+            # Add final result to chat
+            if chat_interface:
+                chat_interface.addMessage('assistant', f"✨ 最终结果:\n\n{result}")
+            
+            return result
+        except Exception as e:
+            # Log any errors that occur during task execution
+            import traceback
+            print(f"Error in solve_task: {str(e)}")
+            print(traceback.format_exc())
+            
+            # Add error message to chat
+            if chat_interface:
+                chat_interface.addMessage('system', f"❌ 推理错误: {str(e)}")
+            
+            # Re-raise the exception
+            raise
+        finally:
+            # Restore original ws_handler
+            self.reasoning.ws_handler = original_ws_handler
     
     def get_steps(self) -> List[Dict[str, Any]]:
         """
