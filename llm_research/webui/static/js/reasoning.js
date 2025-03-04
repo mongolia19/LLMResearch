@@ -78,7 +78,14 @@ class ReasoningInterface {
      * Set up Socket.IO event listeners for reasoning events.
      */
     setupSocketListeners() {
-        const socket = io();
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 10000,
+            autoConnect: true
+        });
         
         // Reasoning start event
         socket.on('reasoning_start', (data) => {

@@ -38,7 +38,10 @@ def create_app(test_config=None):
             raise
     
     # Initialize SocketIO
-    socketio = SocketIO(app, cors_allowed_origins="*")
+    socketio = SocketIO(app,
+                        cors_allowed_origins="*",
+                        ping_timeout=300,  # Increased from default 60 seconds
+                        ping_interval=50)  # Send ping every 50 seconds
     app.config['socketio'] = socketio
     
     # WebSocket handler for reasoning logs

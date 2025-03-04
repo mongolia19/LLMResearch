@@ -5,6 +5,7 @@ API endpoints for the LLMResearch WebUI.
 import os
 import json
 import uuid
+import time
 from flask import request, jsonify, current_app
 from werkzeug.utils import secure_filename
 
@@ -159,6 +160,10 @@ def register_routes(app):
         if conversation_id and conversation_id in conversations:
             chat_interface = conversations[conversation_id]
         
+        # Create session directory
+        session_dir = os.path.join(current_app.instance_path, 'sessions', session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        
         # Get LLM provider
         try:
             llm = get_llm_provider(config, provider_name)
@@ -183,9 +188,23 @@ def register_routes(app):
                 web_search_enabled=web_search_enabled,
                 extract_url_content=extract_url_content,
                 ws_handler=ws_handler_with_context,  # Use the wrapper with context
-                chat_interface=chat_interface  # Pass the chat interface
+                chat_interface=chat_interface,  # Pass the chat interface
             )
             reasoning_sessions[session_id] = reasoning
+            
+            # Save initial session state
+            session_state = {
+                'task': task,
+                'steps': steps,
+                'provider': provider_name,
+                'web_search_enabled': web_search_enabled,
+                'extract_url_content': extract_url_content,
+                'conversation_id': conversation_id,
+                'status': 'initialized',
+                'timestamp': time.time()
+            }
+            with open(os.path.join(session_dir, 'session.json'), 'w') as f:
+                json.dump(session_state, f)
         except Exception as e:
             return jsonify({
                 'error': f"Failed to initialize reasoning: {str(e)}"
@@ -367,6 +386,35 @@ def register_routes(app):
                 'error': f"Failed to get settings: {str(e)}"
             }), 500
     
+    @app.route('/api/reasoning/<session_id>', methods=['GET'])
+    def get_reasoning_result(session_id):
+        """
+        Get the result of a reasoning session.
+        """
+        try:
+            session_dir = os.path.join(current_app.instance_path, 'sessions', session_id)
+            if not os.path.exists(session_dir):
+                return jsonify({
+                    'error': 'Session not found'
+                }), 404
+            
+            # Load session state
+            with open(os.path.join(session_dir, 'session.json'), 'r') as f:
+                session_state = json.load(f)
+            
+            # Load results if available
+            result_file = os.path.join(session_dir, 'result.json')
+            if os.path.exists(result_file):
+                with open(result_file, 'r') as f:
+                    result = json.load(f)
+                session_state['result'] = result
+            
+            return jsonify(session_state)
+        except Exception as e:
+            return jsonify({
+                'error': f"Failed to get session result: {str(e)}"
+            }), 500
+
     @app.route('/api/settings', methods=['POST'])
     def update_settings():
         """
