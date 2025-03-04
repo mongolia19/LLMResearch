@@ -5,7 +5,6 @@ class ReasoningInterface {
     /**
      * Initialize the reasoning interface.
      * 
-     * @param {HTMLElement} reasoningButton - The button to toggle reasoning mode
      * @param {HTMLElement} reasoningModal - The reasoning modal element
      * @param {HTMLElement} reasoningTask - The reasoning task input element
      * @param {HTMLElement} reasoningStepsInput - The reasoning steps input element
@@ -19,7 +18,6 @@ class ReasoningInterface {
      * @param {SettingsPanel} settingsPanel - The settings panel
      */
     constructor(
-        reasoningButton,
         reasoningModal,
         reasoningTask,
         reasoningStepsInput,
@@ -32,7 +30,6 @@ class ReasoningInterface {
         apiClient,
         settingsPanel
     ) {
-        this.reasoningButton = reasoningButton;
         this.reasoningModal = reasoningModal;
         this.reasoningTask = reasoningTask;
         this.reasoningStepsInput = reasoningStepsInput;
@@ -59,11 +56,6 @@ class ReasoningInterface {
      * Set up event listeners for the reasoning interface.
      */
     setupEventListeners() {
-        // Toggle reasoning mode
-        this.reasoningButton.addEventListener('click', () => {
-            this.toggleReasoningModal();
-        });
-        
         // Cancel reasoning
         this.cancelReasoningButton.addEventListener('click', () => {
             this.closeReasoningModal();
@@ -128,32 +120,15 @@ class ReasoningInterface {
             this.handleSubtaskError(data);
         });
 
+        // Timeout event
+        socket.on('reasoning_timeout', (data) => {
+            this.handleTimeout(data);
+        });
+
         // Reasoning log event
         socket.on('reasoning_log', (data) => {
             this.handleReasoningLog(data);
         });
-    }
-    
-    /**
-     * Toggle the reasoning modal.
-     */
-    toggleReasoningModal() {
-        this.isOpen = !this.isOpen;
-        
-        if (this.isOpen) {
-            this.reasoningModal.classList.add('active');
-            
-            // Set the steps from settings
-            const settings = this.settingsPanel.getCurrentSettings();
-            this.reasoningStepsInput.value = settings.reasoning_steps;
-            
-            // Focus the task input
-            setTimeout(() => {
-                this.reasoningTask.focus();
-            }, 100);
-        } else {
-            this.reasoningModal.classList.remove('active');
-        }
     }
     
     /**
@@ -167,17 +142,14 @@ class ReasoningInterface {
     /**
      * Start the reasoning process.
      */
-    async startReasoning() {
-        const task = this.reasoningTask.value.trim();
-        
-        if (!task) {
-            alert('请输入任务描述');
+    async startReasoning(message) {
+        if (!message) {
             return;
         }
         
         // Get settings
         const settings = this.settingsPanel.getCurrentSettings();
-        const steps = parseInt(this.reasoningStepsInput.value, 10);
+        const steps = settings.reasoning_steps || 5;
         
         // Show progress UI
         this.isProcessing = true;
@@ -185,18 +157,12 @@ class ReasoningInterface {
         this.reasoningProgressBar.style.width = '0%';
         this.reasoningStatus.textContent = '准备中...';
         
-        // Disable form controls
-        this.reasoningTask.disabled = true;
-        this.reasoningStepsInput.disabled = true;
-        this.startReasoningButton.disabled = true;
-        this.cancelReasoningButton.disabled = true;
-        
         try {
             // Add a message to the chat
-            this.chatInterface.addMessage('system', `开始多步骤推理: "${task}"`);
+            this.chatInterface.addMessage('system', `开始多步骤推理: "${message}"`);
             
             // Start reasoning
-            await this.apiClient.startReasoning(task, {
+            await this.apiClient.startReasoning(message, {
                 steps: steps,
                 provider: settings.provider,
                 temperature: settings.temperature,
@@ -204,12 +170,6 @@ class ReasoningInterface {
                 extract_url: settings.extract_url_content,
                 context_files: this.chatInterface.getContextFiles()
             });
-            
-            // Close the modal after a delay
-            setTimeout(() => {
-                this.resetReasoningUI();
-                this.closeReasoningModal();
-            }, 1000);
         } catch (error) {
             console.error('Reasoning error:', error);
             this.chatInterface.addMessage('system', `推理错误: ${error.message}`);
@@ -226,15 +186,6 @@ class ReasoningInterface {
         
         // Hide progress UI
         this.reasoningProgress.style.display = 'none';
-        
-        // Enable form controls
-        this.reasoningTask.disabled = false;
-        this.reasoningStepsInput.disabled = false;
-        this.startReasoningButton.disabled = false;
-        this.cancelReasoningButton.disabled = false;
-        
-        // Clear task input
-        this.reasoningTask.value = '';
         
         // Reset subtasks
         this.subtasks = [];
@@ -394,6 +345,22 @@ class ReasoningInterface {
      *
      * @param {Object} data - The event data
      */
+    /**
+     * Handle timeout event.
+     *
+     * @param {Object} data - The event data
+     */
+    handleTimeout(data) {
+        // Update status
+        this.reasoningStatus.textContent = '推理超时';
+        
+        // Add to chat
+        this.chatInterface.addMessage('system', '推理过程超时，请尝试简化任务或增加时间限制');
+        
+        // Reset UI
+        this.resetReasoningUI();
+    }
+
     handleReasoningLog(data) {
         // Handle structured log messages
         if (typeof data === 'object' && data.type) {

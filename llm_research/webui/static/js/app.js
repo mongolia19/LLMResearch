@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Initialize reasoning interface
     const reasoning = new ReasoningInterface(
-        document.getElementById('reasoning-mode'),
         document.getElementById('reasoning-modal'),
         document.getElementById('reasoning-task'),
         document.getElementById('reasoning-steps-input'),
@@ -75,22 +74,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Disable input while processing
         chat.setInputEnabled(false);
-        
+
         try {
             // Get current settings
             const currentSettings = settings.getCurrentSettings();
             
-            // Send message to API
-            const response = await api.sendMessage(message, {
-                provider: currentSettings.provider,
-                temperature: currentSettings.temperature,
-                web_search: currentSettings.web_search_enabled,
-                extract_url: currentSettings.extract_url_content,
-                context_files: chat.getContextFiles()
-            });
-            
-            // Create assistant message placeholder
-            chat.addMessage('assistant', '', response.conversation_id);
+            // Use reasoning mode for all messages
+            await reasoning.startReasoning(message);
         } catch (error) {
             console.error('Error sending message:', error);
             chat.addMessage('system', `错误: ${error.message}`);

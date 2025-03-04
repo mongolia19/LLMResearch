@@ -63,6 +63,9 @@ class ChatInterface {
         if (this.onSendCallback) {
             this.onSendCallback(message);
         }
+        
+        // Re-enable input after sending
+        this.setInputEnabled(true);
     }
     
     /**
