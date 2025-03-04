@@ -95,7 +95,7 @@ def reason(
             click.echo(f"Error initializing web search: {e}", err=True)
     
     # Create the reasoning manager
-    reasoning = Reasoning(llm, max_steps=steps, temperature=temperature, web_search=web_search_tool, extract_url_content=extract_url)
+    reasoning = Reasoning(llm, max_steps=steps, temperature=temperature, web_search=web_search_tool, extract_url_content=extract_url, timeout=60.0)
     
     # Read files if provided
     context = ""

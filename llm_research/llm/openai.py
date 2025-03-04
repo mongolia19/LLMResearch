@@ -122,12 +122,18 @@ class OpenAILLM(BaseLLM):
         for key, value in kwargs.items():
             payload[key] = value
         
-        # Make the API request
-        response = requests.post(
-            self.api_endpoint,
-            headers=self.headers,
-            data=json.dumps(payload)
-        )
+        # Make the API request with timeout
+        try:
+            response = requests.post(
+                self.api_endpoint,
+                headers=self.headers,
+                data=json.dumps(payload),
+                timeout=30*3  # 30 second timeout
+            )
+        except requests.exceptions.Timeout:
+            raise Exception("API request timed out after 30 seconds")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"API request failed: {str(e)}")
         
         # Check for errors
         if response.status_code != 200:
@@ -141,17 +147,48 @@ class OpenAILLM(BaseLLM):
             
             raise Exception(error_msg)
         
-        # Parse the response
-        result = response.json()
-        
-        # Extract the generated text
-        generated_text = result["choices"][0]["message"]["content"]
-        
-        # Return the result
-        return {
-            "text": generated_text,
-            "raw_response": result
-        }
+        # Parse and validate the response
+        try:
+            result = response.json()
+            
+            # Validate response structure
+            if not isinstance(result, dict):
+                raise Exception("Invalid API response format: expected JSON object")
+                
+            if "choices" not in result:
+                # Check for authentication errors
+                if "error" in result and "message" in result["error"]:
+                    error_msg = result["error"]["message"]
+                    if "API key" in error_msg:
+                        raise Exception("Invalid API key provided")
+                    if "model" in error_msg:
+                        raise Exception("Invalid model specified")
+                raise Exception("Invalid API response: missing 'choices' field")
+                
+            if not isinstance(result["choices"], list) or len(result["choices"]) == 0:
+                raise Exception("Invalid API response: 'choices' must be a non-empty array")
+                
+            if "message" not in result["choices"][0]:
+                raise Exception("Invalid API response: missing 'message' in first choice")
+                
+            if "content" not in result["choices"][0]["message"]:
+                raise Exception("Invalid API response: missing 'content' in message")
+            
+            # Extract the generated text
+            generated_text = result["choices"][0]["message"]["content"]
+            
+            # Return the result
+            return {
+                "text": generated_text,
+                "raw_response": result
+            }
+            
+        except json.JSONDecodeError:
+            raise Exception(f"Failed to parse API response: {response.text}")
+        except KeyError as e:
+            raise Exception(f"Invalid API response structure: missing {str(e)}")
+        except Exception as e:
+            raise Exception(f"API response validation failed: {str(e)}")
     
     def generate_stream(
         self,

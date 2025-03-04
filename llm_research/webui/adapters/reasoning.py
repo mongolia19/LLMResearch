@@ -59,6 +59,9 @@ class ReasoningAdapter:
             web_search=web_search,
             extract_url_content=extract_url_content,
             ws_handler=ws_handler  # Pass ws_handler to reasoning
+            ,
+            timeout=60.0  # Set timeout to 30 seconds for testing
+
         )
         
         # Event handlers
@@ -99,7 +102,7 @@ class ReasoningAdapter:
             decomposition_msg = "任务分解完成，生成以下子任务:\n" + "\n".join(
                 [f"{i+1}. {subtask}" for i, subtask in enumerate(subtasks)]
             )
-            self.chat_interface.addMessage('assistant', f"🤔 任务分解结果：\n{decomposition_msg}")
+            self.chat_interface.add_message('assistant', f"🤔 任务分解结果：\n{decomposition_msg}")
         
         # Call event handler if set
         if self.on_task_decomposition:
@@ -146,7 +149,7 @@ class ReasoningAdapter:
         try:
             # Add subtask start message to chat
             if self.chat_interface:
-                self.chat_interface.addMessage(
+                self.chat_interface.add_message(
                     'system',
                     f"开始子任务 1/1: {subtask}"  # Temporary fixed values for testing
                 )
@@ -164,7 +167,7 @@ class ReasoningAdapter:
                 if self.chat_interface:
                     message = f"子任务完成:\n{result}"
                     self.chat_interface.showReasoningSteps(message)
-                    self.chat_interface.addMessage('assistant', message)
+                    self.chat_interface.add_message('assistant', message)
                     
             except Exception as e:
                 error_msg = f"Subtask {i+1} failed: {str(e)}"
@@ -174,7 +177,7 @@ class ReasoningAdapter:
                 if self.chat_interface:
                     message = f"子任务 {i+1}/{len(subtasks)} 失败: {error_msg}"
                     self.chat_interface.showReasoningSteps(message)
-                    self.chat_interface.addMessage('system', message)
+                    self.chat_interface.add_message('system', message)
                 raise
                 
         except TimeoutError as e:
@@ -217,7 +220,7 @@ class ReasoningAdapter:
         """
         # Show aggregation start in chat
         if self.chat_interface:
-            self.chat_interface.addMessage(
+            self.chat_interface.add_message(
                 'system',
                 f"开始整合{len(subtasks)}个子任务的结果..."
             )
@@ -280,31 +283,31 @@ class ReasoningAdapter:
                     
                     if log_type == "decomposition_start":
                         # Task decomposition started
-                        chat_interface.addMessage('system', f"🔍 {message}")
+                        chat_interface.add_message('system', f"🔍 {message}")
                     
                     elif log_type == "decomposition_complete":
                         # Task decomposition completed
-                        chat_interface.addMessage('assistant', f"📋 {message}")
+                        chat_interface.add_message('assistant', f"📋 {message}")
                     
                     elif log_type == "subtask_start":
                         # Subtask started
                         subtask_index = log_data.get("subtask_index", 0)
                         total_subtasks = log_data.get("total_subtasks", 1)
                         subtask = log_data.get("subtask", "")
-                        chat_interface.addMessage('system', f"🔄 执行子任务 {subtask_index+1}/{total_subtasks}: \"{subtask}\"")
+                        chat_interface.add_message('system', f"🔄 执行子任务 {subtask_index+1}/{total_subtasks}: \"{subtask}\"")
                     
                     elif log_type == "subtask_complete":
                         # Subtask completed
                         response = log_data.get("response", "")
-                        chat_interface.addMessage('assistant', f"✅ {message}\n\n{response}")
+                        chat_interface.add_message('assistant', f"✅ {message}\n\n{response}")
                     
                     elif log_type == "subtask_incomplete" or log_type == "subtask_retry":
                         # Subtask incomplete or retry
-                        chat_interface.addMessage('system', message)
+                        chat_interface.add_message('system', message)
                     
                     elif log_type == "aggregation_start":
                         # Aggregation started
-                        chat_interface.addMessage('system', message)
+                        chat_interface.add_message('system', message)
                     
                     elif log_type == "aggregation_complete":
                         # Aggregation completed - final result is handled separately
@@ -320,11 +323,11 @@ class ReasoningAdapter:
                     
                     elif log_type == "step_error" or log_type == "subtask_max_retries":
                         # Error or max retries reached
-                        chat_interface.addMessage('system', f"❌ {message}")
+                        chat_interface.add_message('system', f"❌ {message}")
                     
                     elif log_type == "log" and message.strip():
                         # Regular log message
-                        chat_interface.addMessage('system', message)
+                        chat_interface.add_message('system', message)
             except Exception as e:
                 # Log any errors that occur during handling
                 import traceback
@@ -346,7 +349,7 @@ class ReasoningAdapter:
             
             # Add final result to chat
             if chat_interface:
-                chat_interface.addMessage('assistant', f"✨ 最终结果:\n\n{result}")
+                chat_interface.add_message('assistant', f"✨ 最终结果:\n\n{result}")
             
             return result
         except Exception as e:
@@ -357,7 +360,7 @@ class ReasoningAdapter:
             
             # Add error message to chat
             if chat_interface:
-                chat_interface.addMessage('system', f"❌ 推理错误: {str(e)}")
+                chat_interface.add_message('system', f"❌ 推理错误: {str(e)}")
             
             # Re-raise the exception
             raise

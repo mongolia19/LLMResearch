@@ -130,9 +130,6 @@ def register_routes(app):
             conversation
         )
         
-        # Start streaming in a background thread
-        socketio.start_background_task(stream_response)
-        
         return jsonify({
             'conversation_id': conversation_id,
             'status': 'streaming'
