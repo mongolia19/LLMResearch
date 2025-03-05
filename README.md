@@ -1,5 +1,7 @@
 # LLMResearch
 
+[中文版](README_CN.md) | [English Version](#)
+
 A command-line tool for LLM-based research, multi-step reasoning, and content generation.
 
 ## Features
