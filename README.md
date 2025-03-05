@@ -34,6 +34,16 @@ cp .env.example .env
 
 ## Usage
 
+### WebUI Usage
+
+```bash
+# Start WebUI server
+python -m llm_research webui
+
+# Access Web Interface
+http://localhost:5000
+```
+
 ### Basic Usage
 
 ```bash
@@ -197,6 +207,7 @@ python examples/reasoning_with_url_extraction.py --task "Current global economic
 You can also set the Bocha API key in your `.env` file:
 ```
 # Bocha API Configuration
+# API Application: https://open.bochaai.com/
 BOCHA_API_KEY=your_bocha_api_key_here
 ```
 

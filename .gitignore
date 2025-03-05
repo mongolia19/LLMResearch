@@ -81,6 +81,7 @@ logs/
 output/
 temp/
 .history/
+instance/sessions/
 
 # LLM specific
 # Cached responses, conversation history files, etc.
